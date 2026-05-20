@@ -7,10 +7,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
-import { FastApiClient } from '../../infra/fastapi/fastapi.client';
+import { FastApiClient, AiQaAnswerResult } from '../../infra/fastapi/fastapi.client';
+import { GetQAAnswerResponseDto } from './dto/get-answer.response.dto';
 import { GetQAQuestionsResponseDto } from './dto/get-qa-questions.response.dto';
 import { QAModeEnum, SetQAModeDto } from './dto/set-qa-mode.dto';
 import { SetQAModeResponseDto } from './dto/set-qa-mode.response.dto';
+import { SubmitAnswerResponseDto } from './dto/submit-answer.response.dto';
+import * as path from 'path';
+
+const QA_ALLOWED_EXTENSIONS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
+const QA_ALLOWED_MIMETYPES = new Set([
+  'audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/m4a',
+  'audio/wav', 'audio/ogg', 'video/webm',
+]);
+const QA_MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 type QAQuestionDraft = {
   category: string;
@@ -40,6 +50,59 @@ type QATrainingRow = {
   isLatest: boolean;
   createdAt: Date;
   updatedAt: Date;
+};
+
+type QAAnswerSubmissionQuestionRow = {
+  id: string;
+  category: string;
+  question: string;
+  answerGuide: string;
+  answer: { id: string } | null;
+  qaTraining: {
+    id: string;
+    mode: string;
+    pitch: {
+      id: string;
+      userId: string;
+      isDeleted: boolean;
+    };
+  };
+};
+
+type QAAnswerRow = {
+  id: string;
+  questionId: string;
+  audioFileUrl: string | null;
+  transcription: string | null;
+  briefnessScore: number | null;
+  evidenceScore: number | null;
+  structureScore: number | null;
+  strengths: string | null;
+  weaknesses: string | null;
+  answeredAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type QAAnswerDetailRow = QAAnswerRow & {
+  question: {
+    id: string;
+    qaTraining: {
+      id: string;
+      pitch: {
+        id: string;
+        userId: string;
+        isDeleted: boolean;
+      };
+    };
+  };
+};
+
+type QAUploadFile = {
+  buffer: Buffer;
+  size: number;
+  originalname: string;
+  mimetype: string;
 };
 
 function safeJsonArray(value: string | null | undefined): string[] {
@@ -109,6 +172,26 @@ function buildDefaultAnswerGuide(question: string, category: string): string {
       return `${topic}에 대해 답변의 결론, 근거, 수치 또는 사례, 실행 계획을 순서대로 설명하세요.`;
     }
   }
+}
+
+function normalizeQaFilename(file: QAUploadFile): string {
+  const originalExt = path.extname(file.originalname).toLowerCase();
+  if (QA_ALLOWED_EXTENSIONS.has(originalExt)) {
+    return file.originalname;
+  }
+
+  const contentTypeToExt: Record<string, string> = {
+    'audio/webm': '.webm',
+    'audio/mpeg': '.mp3',
+    'audio/mp4': '.m4a',
+    'audio/m4a': '.m4a',
+    'audio/wav': '.wav',
+    'audio/ogg': '.ogg',
+    'video/webm': '.webm',
+    'video/mp4': '.mp4',
+  };
+
+  return `answer${contentTypeToExt[file.mimetype] ?? '.webm'}`;
 }
 
 @Injectable()
@@ -221,6 +304,66 @@ export class QaService {
         },
       },
     });
+  }
+
+  private validateAnswerAudioFile(file?: QAUploadFile): asserts file is QAUploadFile {
+    if (!file || !file.buffer || file.size <= 0) {
+      throw new BadRequestException({
+        error: 'INVALID_AUDIO_FILE',
+        message: '지원하지 않는 음성 파일 형식입니다.',
+      });
+    }
+
+    if (file.size > QA_MAX_FILE_SIZE) {
+      throw new BadRequestException({
+        error: 'INVALID_AUDIO_FILE',
+        message: '지원하지 않는 음성 파일 형식입니다.',
+      });
+    }
+
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!QA_ALLOWED_EXTENSIONS.has(ext) && !QA_ALLOWED_MIMETYPES.has(file.mimetype)) {
+      throw new BadRequestException({
+        error: 'INVALID_AUDIO_FILE',
+        message: '지원하지 않는 음성 파일 형식입니다.',
+      });
+    }
+  }
+
+  private mapQAAnswerResponse(answer: QAAnswerRow): SubmitAnswerResponseDto {
+    return {
+      question_id: answer.questionId,
+      answer: {
+        answer_id: answer.id,
+        audio_file_url: answer.audioFileUrl,
+        transcription: answer.transcription,
+        briefness_score: answer.briefnessScore,
+        evidence_score: answer.evidenceScore,
+        structure_score: answer.structureScore,
+        strengths: answer.strengths,
+        weaknesses: answer.weaknesses,
+        answered_at: answer.answeredAt ? answer.answeredAt.toISOString() : null,
+        created_at: answer.createdAt.toISOString(),
+        updated_at: answer.updatedAt.toISOString(),
+      },
+    };
+  }
+
+  private mapQAAnswerDetailResponse(answer: QAAnswerRow): GetQAAnswerResponseDto {
+    return {
+      answer_id: answer.id,
+      question_id: answer.questionId,
+      audio_file_url: answer.audioFileUrl,
+      transcription: answer.transcription,
+      briefness_score: answer.briefnessScore,
+      evidence_score: answer.evidenceScore,
+      structure_score: answer.structureScore,
+      strengths: answer.strengths,
+      weaknesses: answer.weaknesses,
+      answered_at: answer.answeredAt ? answer.answeredAt.toISOString() : null,
+      created_at: answer.createdAt.toISOString(),
+      updated_at: answer.updatedAt.toISOString(),
+    };
   }
 
   private static sleep(ms: number): Promise<void> {
@@ -519,6 +662,156 @@ export class QaService {
       refreshedQATraining,
       refreshedQATraining.questions,
     );
+  }
+
+  async submitAnswer(
+    userId: string,
+    questionId: string,
+    file: QAUploadFile,
+  ): Promise<SubmitAnswerResponseDto> {
+    this.validateAnswerAudioFile(file);
+
+    const question = await this.prisma.qAQuestion.findUnique({
+      where: { id: questionId },
+      select: {
+        id: true,
+        category: true,
+        question: true,
+        answerGuide: true,
+        answer: {
+          select: {
+            id: true,
+          },
+        },
+        qaTraining: {
+          select: {
+            id: true,
+            mode: true,
+            pitch: {
+              select: {
+                id: true,
+                userId: true,
+                isDeleted: true,
+              },
+            },
+          },
+        },
+      },
+    }) as QAAnswerSubmissionQuestionRow | null;
+
+    if (!question || question.qaTraining.pitch.isDeleted) {
+      throw new NotFoundException({
+        error: 'QUESTION_NOT_FOUND',
+        message: '해당 질문을 찾을 수 없습니다.',
+      });
+    }
+
+    if (question.qaTraining.pitch.userId !== userId) {
+      throw new ForbiddenException({
+        error: 'UNAUTHORIZED',
+        message: '인증이 필요합니다.',
+      });
+    }
+
+    if (question.qaTraining.mode !== 'REALTIME') {
+      throw new ConflictException({
+        error: 'INVALID_QA_MODE',
+        message: '실시간 연습 모드에서만 답변 음성을 업로드할 수 있습니다.',
+      });
+    }
+
+    if (question.answer) {
+      throw new ConflictException({
+        error: 'ANSWER_ALREADY_EXISTS',
+        message: '해당 질문에는 이미 답변이 제출되어 있습니다.',
+      });
+    }
+
+    let aiResult: AiQaAnswerResult;
+    try {
+      aiResult = await this.fastApiClient.analyzeQaAnswer(
+        question.id,
+        file.buffer,
+        normalizeQaFilename(file),
+        question.question,
+        question.answerGuide,
+      );
+    } catch (error) {
+      this.logger.error(`QA 답변 분석 실패: ${(error as Error).message}`);
+      throw new ConflictException({
+        error: 'ANSWER_ANALYSIS_FAILED',
+        message: '답변 업로드는 완료되었지만 분석에 실패했습니다.',
+      });
+    }
+
+    const createdAnswer = await this.prisma.qAAnswer.create({
+      data: {
+        questionId: question.id,
+        audioFileUrl: aiResult.audio_file_url ?? null,
+        transcription: aiResult.transcription ?? null,
+        briefnessScore: aiResult.briefness_score ?? null,
+        evidenceScore: aiResult.evidence_score ?? null,
+        structureScore: aiResult.structure_score ?? null,
+        strengths: aiResult.strengths ?? null,
+        weaknesses: aiResult.weaknesses ?? null,
+        answeredAt: new Date(),
+      },
+    });
+
+    return this.mapQAAnswerResponse(createdAnswer);
+  }
+
+  async getAnswerFeedback(
+    userId: string,
+    answerId: string,
+  ): Promise<GetQAAnswerResponseDto> {
+    const answer = await this.prisma.qAAnswer.findUnique({
+      where: { id: answerId },
+      select: {
+        id: true,
+        questionId: true,
+        audioFileUrl: true,
+        transcription: true,
+        briefnessScore: true,
+        evidenceScore: true,
+        structureScore: true,
+        strengths: true,
+        weaknesses: true,
+        answeredAt: true,
+        createdAt: true,
+        updatedAt: true,
+        question: {
+          select: {
+            id: true,
+            qaTraining: {
+              select: {
+                id: true,
+                pitch: {
+                  select: {
+                    id: true,
+                    userId: true,
+                    isDeleted: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }) as QAAnswerDetailRow | null;
+
+    if (
+      !answer ||
+      answer.question.qaTraining.pitch.isDeleted ||
+      answer.question.qaTraining.pitch.userId !== userId
+    ) {
+      throw new NotFoundException({
+        error: 'ANSWER_NOT_FOUND',
+        message: '해당 답변을 찾을 수 없습니다.',
+      });
+    }
+
+    return this.mapQAAnswerDetailResponse(answer);
   }
 
   private buildQuestionsFromContext(params: {

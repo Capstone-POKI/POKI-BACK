@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Post,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,10 +11,14 @@ import {
   Req,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -23,12 +28,21 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetQAQuestionsResponseDto } from './dto/get-qa-questions.response.dto';
+import { GetQAAnswerResponseDto } from './dto/get-answer.response.dto';
 import { SetQAModeDto } from './dto/set-qa-mode.dto';
 import { SetQAModeResponseDto } from './dto/set-qa-mode.response.dto';
+import { SubmitAnswerResponseDto } from './dto/submit-answer.response.dto';
 import { QaService } from './qa.service';
 
 interface AuthenticatedRequest extends Request {
   user: { id: string };
+}
+
+interface UploadedAudioFile {
+  buffer: Buffer;
+  size: number;
+  originalname: string;
+  mimetype: string;
 }
 
 function parseBooleanQuery(value: string | string[] | undefined): boolean {
@@ -130,6 +144,40 @@ export class QaController {
     );
   }
 
+  @Get('answers/:answerId')
+  @ApiOperation({
+    summary: '답변 피드백 조회',
+    description:
+      '특정 답변의 점수, 전사 텍스트, 음성 파일 경로, 강점/약점을 조회합니다.',
+  })
+  @ApiParam({ name: 'answerId', description: 'Answer ID' })
+  @ApiResponse({
+    status: 200,
+    description: '답변 피드백 조회 성공',
+    type: GetQAAnswerResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    schema: {
+      example: { error: 'UNAUTHORIZED', message: '인증이 필요합니다.' },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    schema: {
+      example: {
+        error: 'ANSWER_NOT_FOUND',
+        message: '해당 답변을 찾을 수 없습니다.',
+      },
+    },
+  })
+  getAnswerFeedback(
+    @Param('answerId') answerId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<GetQAAnswerResponseDto> {
+    return this.qaService.getAnswerFeedback(req.user.id, answerId);
+  }
+
   @Patch('pitches/:pitchId/qa-mode')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -195,5 +243,85 @@ export class QaController {
     @Req() req: AuthenticatedRequest,
   ): Promise<SetQAModeResponseDto> {
     return this.qaService.setQAMode(req.user.id, pitchId, dto);
+  }
+
+  @Post('questions/:questionId/answers')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: '답변 음성 업로드 및 분석',
+    description:
+      '특정 질문에 대한 사용자의 음성 답변을 업로드하고 STT 및 분석 결과를 저장합니다. 실시간 연습 모드에서만 사용할 수 있습니다.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiParam({ name: 'questionId', description: 'Question ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: '음성 파일 (webm, mp3, m4a, wav, ogg, mp4)',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiResponse({ status: 201, type: SubmitAnswerResponseDto })
+  @ApiResponse({
+    status: 400,
+    schema: {
+      example: {
+        error: 'INVALID_AUDIO_FILE',
+        message: '지원하지 않는 음성 파일 형식입니다.',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    schema: {
+      example: { error: 'UNAUTHORIZED', message: '인증이 필요합니다.' },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    schema: {
+      example: {
+        error: 'QUESTION_NOT_FOUND',
+        message: '해당 질문을 찾을 수 없습니다.',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 409,
+    schema: {
+      oneOf: [
+        {
+          example: {
+            error: 'INVALID_QA_MODE',
+            message: '실시간 연습 모드에서만 답변 음성을 업로드할 수 있습니다.',
+          },
+        },
+        {
+          example: {
+            error: 'ANSWER_ALREADY_EXISTS',
+            message: '해당 질문에는 이미 답변이 제출되어 있습니다.',
+          },
+        },
+        {
+          example: {
+            error: 'ANSWER_ANALYSIS_FAILED',
+            message: '답변 업로드는 완료되었지만 분석에 실패했습니다.',
+          },
+        },
+      ],
+    },
+  })
+  submitAnswer(
+    @Param('questionId') questionId: string,
+    @UploadedFile() file: UploadedAudioFile,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<SubmitAnswerResponseDto> {
+    return this.qaService.submitAnswer(req.user.id, questionId, file);
   }
 }

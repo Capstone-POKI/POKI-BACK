@@ -1,86 +1,82 @@
 import {
   Controller,
-  Post,
   Get,
-  Param,
-  Req,
-  Body,
-  UseGuards,
   HttpCode,
   HttpStatus,
+  Param,
+  Post,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CreateReportResponseDto } from './dto/create-report.response.dto';
+import { GetReportResponseDto } from './dto/get-report.response.dto';
 import { ReportService } from './report.service';
 
 interface AuthenticatedRequest extends Request {
   user: { id: string };
 }
 
-@ApiTags('Reports')
+@ApiTags('Report')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('api')
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
 
-  @Post('pitches/:pitchId/reports')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: 'Generate final report for a pitch' })
+  @Post('pitches/:pitchId/report')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '전체 분석 통합 리포트 생성' })
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })
-  async generate(@Param('pitchId') pitchId: string, @Req() req: AuthenticatedRequest, @Body() body: { force?: boolean }) {
-    return this.reportService.generateReport(req.user.id, pitchId, Boolean(body?.force));
+  @ApiResponse({ status: 201, type: CreateReportResponseDto })
+  @ApiResponse({
+    status: 401,
+    schema: { example: { error: 'UNAUTHORIZED' } },
+  })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'PITCH_NOT_FOUND' } },
+  })
+  @ApiResponse({
+    status: 409,
+    schema: {
+      example: {
+        error: 'INSUFFICIENT_ANALYSIS_DATA',
+        message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
+      },
+    },
+  })
+  create(
+    @Param('pitchId') pitchId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<CreateReportResponseDto> {
+    return this.reportService.create(req.user.id, pitchId);
   }
 
   @Get('reports/:reportId')
-  @ApiOperation({ summary: 'Get report detail by reportId' })
+  @ApiOperation({ summary: '리포트 상세 조회' })
   @ApiParam({ name: 'reportId', description: 'Report ID' })
-  async getById(@Param('reportId') reportId: string, @Req() req: AuthenticatedRequest) {
-    const r = await this.reportService.getReportById(req.user.id, reportId);
-    return {
-      report_id: r.id,
-      pitch_id: r.pitchId,
-      notice_id: r.noticeId,
-      ir_deck_id: r.irDeckId,
-      rehearsal_id: r.rehearsalId,
-      notice_summary: r.noticeSummary,
-      notice_score: r.noticeScore,
-      ir_deck_summary: r.irDeckSummary,
-      ir_deck_score: r.irDeckScore,
-      voice_summary: r.voiceSummary,
-      voice_score: r.voiceScore,
-      qa_summary: r.qaSummary,
-      qa_score: r.qaScore,
-      final_score: r.finalScore,
-      chart_data: r.chartData,
-      generated_at: r.generatedAt.toISOString(),
-      updated_at: r.updatedAt.toISOString(),
-    };
-  }
-
-  @Get('pitches/:pitchId/report')
-  @ApiOperation({ summary: 'Get report for a given pitch (latest)' })
-  @ApiParam({ name: 'pitchId', description: 'Pitch ID' })
-  async getByPitch(@Param('pitchId') pitchId: string, @Req() req: AuthenticatedRequest) {
-    const r = await this.reportService.getReportByPitch(req.user.id, pitchId);
-    return {
-      report_id: r.id,
-      pitch_id: r.pitchId,
-      notice_id: r.noticeId,
-      ir_deck_id: r.irDeckId,
-      rehearsal_id: r.rehearsalId,
-      notice_summary: r.noticeSummary,
-      notice_score: r.noticeScore,
-      ir_deck_summary: r.irDeckSummary,
-      ir_deck_score: r.irDeckScore,
-      voice_summary: r.voiceSummary,
-      voice_score: r.voiceScore,
-      qa_summary: r.qaSummary,
-      qa_score: r.qaScore,
-      final_score: r.finalScore,
-      chart_data: r.chartData,
-      generated_at: r.generatedAt.toISOString(),
-      updated_at: r.updatedAt.toISOString(),
-    };
+  @ApiResponse({ status: 200, type: GetReportResponseDto })
+  @ApiResponse({
+    status: 401,
+    schema: { example: { error: 'UNAUTHORIZED' } },
+  })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'REPORT_NOT_FOUND' } },
+  })
+  getOne(
+    @Param('reportId') reportId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<GetReportResponseDto> {
+    return this.reportService.getOne(req.user.id, reportId);
   }
 }

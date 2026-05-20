@@ -192,4 +192,80 @@ describe('Report create (e2e)', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('INSUFFICIENT_ANALYSIS_DATA');
   });
+
+  it('returns 200 with the integrated report detail', async () => {
+    mockPrisma.report.findUnique.mockResolvedValue({
+      id: 'report-1',
+      pitchId: 'pitch-1',
+      noticeSummary:
+        '본 공고는 예비창업자를 대상으로 하며 시장성, 문제정의, 실행가능성 중심의 평가를 요구합니다.',
+      noticeScore: 82,
+      irDeckSummary:
+        '문제 정의와 시장 파트는 강점이 있으나, 수익모델과 재무 계획의 설득력은 추가 보완이 필요합니다.',
+      irDeckScore: 78,
+      voiceSummary:
+        '전반적으로 전달력은 안정적이지만, 말속도 편차와 강조 부족으로 인해 핵심 포인트가 약하게 들릴 수 있습니다.',
+      voiceScore: 75,
+      qaSummary:
+        '질문 의도 파악은 우수했으나, 답변 근거 제시와 구조적 마무리에서 일부 보완이 필요합니다.',
+      qaScore: 80,
+      finalScore: 79,
+      chartData: JSON.stringify({
+        labels: ['공고문', 'IR Deck', '음성', 'Q&A'],
+        scores: [82, 78, 75, 80],
+      }),
+      updatedAt: new Date('2026-03-12T15:00:00Z'),
+      pitch: {
+        id: 'pitch-1',
+        userId: 'user-1',
+        isDeleted: false,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/api/reports/report-1')
+      .set('Authorization', 'Bearer FAKE');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      report_id: 'report-1',
+      notice: {
+        summary:
+          '본 공고는 예비창업자를 대상으로 하며 시장성, 문제정의, 실행가능성 중심의 평가를 요구합니다.',
+        score: 82,
+      },
+      ir_deck: {
+        summary:
+          '문제 정의와 시장 파트는 강점이 있으나, 수익모델과 재무 계획의 설득력은 추가 보완이 필요합니다.',
+        score: 78,
+      },
+      speech: {
+        summary:
+          '전반적으로 전달력은 안정적이지만, 말속도 편차와 강조 부족으로 인해 핵심 포인트가 약하게 들릴 수 있습니다.',
+        score: 75,
+      },
+      qa: {
+        summary:
+          '질문 의도 파악은 우수했으나, 답변 근거 제시와 구조적 마무리에서 일부 보완이 필요합니다.',
+        score: 80,
+      },
+      final_score: 79,
+      chart_data: {
+        labels: ['공고문', 'IR Deck', '음성', 'Q&A'],
+        scores: [82, 78, 75, 80],
+      },
+      updated_at: '2026-03-12T15:00:00.000Z',
+    });
+  });
+
+  it('returns 404 when the report is missing', async () => {
+    mockPrisma.report.findUnique.mockResolvedValue(null);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/reports/report-missing')
+      .set('Authorization', 'Bearer FAKE');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('REPORT_NOT_FOUND');
+  });
 });

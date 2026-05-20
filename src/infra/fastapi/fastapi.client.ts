@@ -197,6 +197,16 @@ export interface AiQaQuestionsResponse {
   total?: number;
 }
 
+export interface AiQaAnswerResult {
+  audio_file_url: string | null;
+  transcription: string | null;
+  briefness_score: number | null;
+  evidence_score: number | null;
+  structure_score: number | null;
+  strengths: string | null;
+  weaknesses: string | null;
+}
+
 @Injectable()
 export class FastApiClient {
   private readonly logger = new Logger(FastApiClient.name);
@@ -376,5 +386,28 @@ export class FastApiClient {
   async getQaQuestions(pitchId: string): Promise<AiQaQuestionsResponse> {
     const res = await axios.get(`${this.baseUrl}/api/pitches/${pitchId}/questions`);
     return res.data as AiQaQuestionsResponse;
+  }
+
+  async analyzeQaAnswer(
+    questionId: string,
+    fileBuffer: Buffer,
+    filename: string,
+    question: string,
+    answerGuide: string,
+  ): Promise<AiQaAnswerResult> {
+    const form = new FormData();
+    form.append('file', fileBuffer, {
+      filename,
+      contentType: FastApiClient.getMimeType(filename),
+    });
+    form.append('question', question);
+    form.append('answer_guide', answerGuide);
+
+    const res = await axios.post(
+      `${this.baseUrl}/api/questions/${questionId}/answers/analyze`,
+      form,
+      { headers: form.getHeaders() },
+    );
+    return res.data as AiQaAnswerResult;
   }
 }

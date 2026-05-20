@@ -25,6 +25,9 @@ type PrismaMock = {
   pitch: {
     findUnique: FindUniqueMock;
   };
+  qAAnswer: {
+    findUnique: FindUniqueMock;
+  };
   qATraining: {
     findFirst: FindFirstMock;
     update: UpdateMock;
@@ -54,6 +57,9 @@ type FastApiClientMock = {
 describe('QaService.getQuestions', () => {
   const prisma: PrismaMock = {
     pitch: {
+      findUnique: jest.fn<(args: unknown) => Promise<unknown>>(),
+    },
+    qAAnswer: {
       findUnique: jest.fn<(args: unknown) => Promise<unknown>>(),
     },
     qATraining: {
@@ -222,6 +228,86 @@ describe('QaService.getQuestions', () => {
     });
     expect(result.questions[1].answer_guide).toContain('핵심 팀원의 역할');
     expect(result.updated_at).toBe('2026-03-12T14:22:00.000Z');
+  });
+
+  it('답변 상세 조회 시 점수와 피드백을 반환한다', async () => {
+    prisma.qAAnswer.findUnique.mockResolvedValue({
+      id: 'a-1',
+      questionId: 'q-1',
+      audioFileUrl: 'https://storage.pitchcoach.ai/qa/a-1.webm',
+      transcription: '테스트 전사',
+      briefnessScore: 24,
+      evidenceScore: 21,
+      structureScore: 26,
+      strengths: '강점 문장',
+      weaknesses: '약점 문장',
+      answeredAt: new Date('2026-03-12T14:15:00.000Z'),
+      createdAt: new Date('2026-03-12T14:15:00.000Z'),
+      updatedAt: new Date('2026-03-12T14:18:00.000Z'),
+      question: {
+        id: 'q-1',
+        qaTraining: {
+          id: 'qa-1',
+          pitch: {
+            id: 'pitch-1',
+            userId: 'user-1',
+            isDeleted: false,
+          },
+        },
+      },
+    });
+
+    const result = await service.getAnswerFeedback('user-1', 'a-1');
+
+    expect(prisma.qAAnswer.findUnique).toHaveBeenCalledWith({
+      where: { id: 'a-1' },
+      select: expect.any(Object),
+    });
+    expect(result.answer_id).toBe('a-1');
+    expect(result.question_id).toBe('q-1');
+    expect(result.briefness_score).toBe(24);
+    expect(result.strengths).toBe('강점 문장');
+    expect(result.answered_at).toBe('2026-03-12T14:15:00.000Z');
+  });
+
+  it('다른 사용자의 답변은 찾을 수 없다고 처리한다', async () => {
+    prisma.qAAnswer.findUnique.mockResolvedValue({
+      id: 'a-1',
+      questionId: 'q-1',
+      audioFileUrl: null,
+      transcription: null,
+      briefnessScore: null,
+      evidenceScore: null,
+      structureScore: null,
+      strengths: null,
+      weaknesses: null,
+      answeredAt: null,
+      createdAt: new Date('2026-03-12T14:15:00.000Z'),
+      updatedAt: new Date('2026-03-12T14:18:00.000Z'),
+      question: {
+        id: 'q-1',
+        qaTraining: {
+          id: 'qa-1',
+          pitch: {
+            id: 'pitch-1',
+            userId: 'other-user',
+            isDeleted: false,
+          },
+        },
+      },
+    });
+
+    await expect(service.getAnswerFeedback('user-1', 'a-1')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('존재하지 않는 답변은 찾을 수 없다고 처리한다', async () => {
+    prisma.qAAnswer.findUnique.mockResolvedValue(null);
+
+    await expect(service.getAnswerFeedback('user-1', 'a-1')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('regenerate_guides=true면 모든 가이드를 재생성한다', async () => {

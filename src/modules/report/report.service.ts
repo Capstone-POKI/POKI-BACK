@@ -245,45 +245,32 @@ export class ReportService {
     const finalScore = clampScore(average([noticeScore, irDeckScore, voiceScore, qaScore]));
     const generatedAt = new Date();
 
+    const data = {
+      noticeId: notice.id,
+      irDeckId: irDeck.id,
+      rehearsalId: rehearsal.id,
+      noticeSummary: this.buildNoticeSummary(notice, noticeScore),
+      noticeScore,
+      irDeckSummary: this.buildIrDeckSummary(irDeck, irDeckScore),
+      irDeckScore,
+      voiceSummary: this.buildVoiceSummary(rehearsal, voiceScore),
+      voiceScore,
+      qaSummary: this.buildQaSummary(qaTraining, qaScore),
+      qaScore,
+      finalScore,
+      chartData: JSON.stringify(
+        this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
+      ),
+      generatedAt,
+    };
+
     const report = await this.prisma.report.upsert({
       where: { pitchId },
       create: {
         pitchId,
-        noticeId: notice.id,
-        irDeckId: irDeck.id,
-        rehearsalId: rehearsal.id,
-        noticeSummary: this.buildNoticeSummary(notice, noticeScore),
-        noticeScore,
-        irDeckSummary: this.buildIrDeckSummary(irDeck, irDeckScore),
-        irDeckScore,
-        voiceSummary: this.buildVoiceSummary(rehearsal, voiceScore),
-        voiceScore,
-        qaSummary: this.buildQaSummary(qaTraining, qaScore),
-        qaScore,
-        finalScore,
-        chartData: JSON.stringify(
-          this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
-        ),
-        generatedAt,
+        ...data,
       },
-      update: {
-        noticeId: notice.id,
-        irDeckId: irDeck.id,
-        rehearsalId: rehearsal.id,
-        noticeSummary: this.buildNoticeSummary(notice, noticeScore),
-        noticeScore,
-        irDeckSummary: this.buildIrDeckSummary(irDeck, irDeckScore),
-        irDeckScore,
-        voiceSummary: this.buildVoiceSummary(rehearsal, voiceScore),
-        voiceScore,
-        qaSummary: this.buildQaSummary(qaTraining, qaScore),
-        qaScore,
-        finalScore,
-        chartData: JSON.stringify(
-          this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
-        ),
-        generatedAt,
-      },
+      update: data,
     });
 
     return {

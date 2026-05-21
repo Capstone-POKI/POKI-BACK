@@ -32,7 +32,7 @@ interface AuthenticatedRequest extends Request {
 export class ReportController {
   constructor(private readonly reportService: ReportService) {}
 
-  @Post('pitches/:pitchId/report')
+  @Post('pitches/:pitchId/reports')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '전체 분석 통합 리포트 생성' })
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })

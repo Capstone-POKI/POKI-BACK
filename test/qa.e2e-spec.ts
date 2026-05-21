@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-const request = require('supertest');
+import request from 'supertest';
 import { QaController } from '../src/modules/qa/qa.controller';
 import { QaService } from '../src/modules/qa/qa.service';
 import { PrismaService } from '../src/infra/prisma/prisma.service';

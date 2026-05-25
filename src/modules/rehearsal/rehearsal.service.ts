@@ -470,9 +470,6 @@ export class RehearsalService {
         category: s.category ?? '',
         score: s.score ?? 0,
         thumbnail_url: s.slide?.thumbnailUrl ?? null,
-        start_timestamp: s.startTimestamp,
-        end_timestamp: s.endTimestamp,
-        duration_display: s.durationDisplay ?? '',
         content_summary: s.contentSummary ?? '',
         detailed_feedback: s.detailedFeedback ?? '',
         strengths: safeJsonArray(s.strengths),
@@ -854,39 +851,73 @@ export class RehearsalService {
       await tx.rehearsalDeliveryAnalysis.createMany({ data: deliveryData.map((d) => ({ rehearsalId, ...d })) });
 
       // 4. RehearsalSlideAnalysis 생성
-      if (slidesResult) {
-        const slides = slidesResult.slides as Array<Record<string, unknown>> ?? [];
-        await tx.rehearsalSlideAnalysis.deleteMany({ where: { rehearsalId } });
+      await tx.rehearsalSlideAnalysis.deleteMany({ where: { rehearsalId } });
 
-        // Find matching slide IDs from IR deck
-        const deckSlides = irDeckId
-          ? await tx.slide.findMany({ where: { irDeckId }, select: { id: true, slideNumber: true } })
-          : [];
-        const slideIdMap = new Map(deckSlides.map((s) => [s.slideNumber, s.id]));
-
-        for (const s of slides) {
-          const slideNum = Number(s.slide_number ?? 0);
-          const durationSec = Math.round(Number(s.duration_seconds ?? 0));
-          const startTs = Number(s.start_timestamp ?? 0);
-          const endTs = Number(s.end_timestamp ?? 0);
-          await tx.rehearsalSlideAnalysis.create({
-            data: {
-              rehearsalId,
-              slideId: slideIdMap.get(slideNum) ?? null,
-              slideNumber: slideNum,
-              category: String(s.category ?? ''),
-              startTimestamp: startTs,
-              endTimestamp: endTs,
-              durationSeconds: durationSec,
-              durationDisplay: String(s.duration_display ?? ''),
-              score: Number(s.score ?? 0),
-              contentSummary: String(s.content_summary ?? ''),
-              detailedFeedback: String(s.detailed_feedback ?? ''),
-              strengths: JSON.stringify(s.strengths ?? []),
-              improvements: JSON.stringify(s.improvements ?? []),
+      const deckSlides = irDeckId
+        ? await tx.slide.findMany({
+            where: { irDeckId },
+            orderBy: { slideNumber: 'asc' },
+            select: {
+              id: true,
+              slideNumber: true,
+              category: true,
+              score: true,
+              contentSummary: true,
             },
-          });
-        }
+          })
+        : [];
+      const slideIdMap = new Map(deckSlides.map((s) => [s.slideNumber, s.id]));
+      let slides = (slidesResult?.slides as Array<Record<string, unknown>> | undefined) ?? [];
+
+      if (slides.length === 0 && deckSlides.length > 0) {
+        const fallbackTotalSeconds =
+          audioDurationSeconds ?? Math.max(deckSlides.length, 1);
+        const fallbackDuration = fallbackTotalSeconds / deckSlides.length;
+        slides = deckSlides.map((slide, index) => {
+          const startTs = Number((index * fallbackDuration).toFixed(2));
+          const endTs = Number(((index + 1) * fallbackDuration).toFixed(2));
+          return {
+            slide_number: slide.slideNumber,
+            category: slide.category ?? '',
+            start_timestamp: startTs,
+            end_timestamp: endTs,
+            duration_seconds: Math.max(0, Math.round(endTs - startTs)),
+            duration_display: formatDuration(Math.max(0, Math.round(endTs - startTs))),
+            score: slide.score ?? totalScore,
+            content_summary: slide.contentSummary ?? '',
+            detailed_feedback:
+              '슬라이드 타임스탬프가 제공되지 않아 IR Deck 슬라이드 순서와 전체 음성 길이를 기준으로 자동 분할한 결과입니다.',
+            strengths: [],
+            improvements: [
+              '정확한 슬라이드별 음성 분석을 위해 업로드 시 slide_timestamps를 함께 전달하세요.',
+            ],
+          };
+        });
+      }
+
+      for (const s of slides) {
+        const slideNum = Number(s.slide_number ?? 0);
+        if (!Number.isInteger(slideNum) || slideNum <= 0) continue;
+        const durationSec = Math.round(Number(s.duration_seconds ?? 0));
+        const startTs = Number(s.start_timestamp ?? 0);
+        const endTs = Number(s.end_timestamp ?? 0);
+        await tx.rehearsalSlideAnalysis.create({
+          data: {
+            rehearsalId,
+            slideId: slideIdMap.get(slideNum) ?? null,
+            slideNumber: slideNum,
+            category: String(s.category ?? ''),
+            startTimestamp: startTs,
+            endTimestamp: endTs,
+            durationSeconds: durationSec,
+            durationDisplay: String(s.duration_display ?? ''),
+            score: Number(s.score ?? 0),
+            contentSummary: String(s.content_summary ?? ''),
+            detailedFeedback: String(s.detailed_feedback ?? ''),
+            strengths: JSON.stringify(s.strengths ?? []),
+            improvements: JSON.stringify(s.improvements ?? []),
+          },
+        });
       }
 
       // 5. Pitch 상태 갱신

@@ -410,4 +410,17 @@ export class FastApiClient {
     );
     return res.data as AiQaAnswerResult;
   }
+
+  async generateReport(
+    pitchId: string,
+    options?: { force?: boolean } | null,
+  ): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = {};
+    if (options?.force) body.force = true;
+    const res = await axios.post(
+      `${this.baseUrl}/api/pitches/${pitchId}/reports`,
+      body,
+    );
+    return res.data as Record<string, unknown>;
+  }
 }

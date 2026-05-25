@@ -835,9 +835,10 @@ export class DeckService {
           this.logger.warn('AI slides 조회 실패, summary만 동기화');
         }
 
+        const ds = summary.deck_score;
+        const pg = summary.presentation_guide ?? { guide: [], time_allocation: [], emphasized_slides: [] };
+
         await this.prisma.$transaction(async (tx) => {
-          const ds = summary.deck_score;
-          const pg = summary.presentation_guide ?? { guide: [], time_allocation: [], emphasized_slides: [] };
 
           // 1. Deck 본체 갱신
           await tx.iRDeck.update({

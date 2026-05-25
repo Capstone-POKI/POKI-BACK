@@ -12,7 +12,7 @@ import {
   AiVoiceAnalyzeOptions,
 } from '../../infra/fastapi/fastapi.client';
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (OpenAI Whisper API limit)
 const ALLOWED_MIMETYPES = new Set([
   'audio/webm',
   'audio/mpeg',
@@ -24,9 +24,6 @@ const ALLOWED_MIMETYPES = new Set([
 ]);
 const ALLOWED_EXTENSIONS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
 const MAX_REHEARSAL_VERSIONS = 6;
-
-// In-memory map: rehearsalId → AI voice_id
-const aiVoiceIdMap = new Map<string, string>();
 
 function safeJsonArray(value: string | null | undefined): string[] {
   if (!value) return [];
@@ -523,6 +520,7 @@ export class RehearsalService {
     return {
       pitch_id: pitchId,
       total_versions: totalVersions,
+      shown_versions: versions.length,
       versions: versions.map((version) => ({
         voice_id: version.id,
         version: version.rehearsalNumber,
@@ -681,7 +679,6 @@ export class RehearsalService {
         options,
       )
       .then((aiResult) => {
-        aiVoiceIdMap.set(rehearsalId, aiResult.voice_id);
         return this.prisma.rehearsal.update({
           where: { id: rehearsalId },
           data: { audioFileUrl: `ai://${aiResult.voice_id}` },

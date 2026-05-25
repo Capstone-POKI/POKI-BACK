@@ -823,6 +823,11 @@ export class DeckService {
         await this.fastApiClient.getIrDeckResult(aiId);
 
       if (summary.analysis_status === 'COMPLETED') {
+        if (!summary.deck_score) {
+          this.logger.warn(`IR Deck COMPLETED but deck_score missing: ${aiId}`);
+          return false;
+        }
+
         let slidesRes: AiIrSlidesResponse | null = null;
         try {
           slidesRes = await this.fastApiClient.getIrDeckSlides(aiId);

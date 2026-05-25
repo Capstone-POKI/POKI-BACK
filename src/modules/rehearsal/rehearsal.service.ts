@@ -232,7 +232,7 @@ export class RehearsalService {
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException({
         error: 'FILE_TOO_LARGE',
-        message: '파일 크기는 50MB 이하여야 합니다',
+        message: '파일 크기는 25MB 이하여야 합니다',
       });
     }
 

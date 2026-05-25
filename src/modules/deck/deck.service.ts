@@ -124,14 +124,14 @@ export class DeckService {
       return null;
     }
 
-    const normalizedCriteria = this.normalizeNoticeCriteriaToIrAxes(
-      criteriaRows.map((row) => ({
-        criteriaName: row.criteriaName,
+    const criteria = criteriaRows
+      .map((row) => ({
+        criteria_name: row.criteriaName,
         points: row.points ?? 0,
-        pitchcoachInterpretation: row.pitchcoachInterpretation ?? '',
-        irGuide: row.irGuide ?? '',
-      })),
-    );
+        pitchcoach_interpretation: row.pitchcoachInterpretation ?? '',
+        ir_guide: row.irGuide ?? '',
+      }))
+      .filter((row) => row.criteria_name.trim().length > 0);
 
     return {
       type: this.mapPitchTypeForAi(pitchType),
@@ -142,12 +142,7 @@ export class DeckService {
       killer_question: null,
       source: 'notice_evaluation_criteria',
       recruitment_type: notice?.recruitmentType ?? null,
-      evaluation_criteria: normalizedCriteria.map((row) => ({
-        criteria_name: row.criteria_name,
-        points: row.points,
-        pitchcoach_interpretation: row.pitchcoach_interpretation,
-        ir_guide: row.ir_guide,
-      })),
+      evaluation_criteria: criteria,
     };
   }
 
@@ -165,18 +160,16 @@ export class DeckService {
         irGuide: true,
       },
     });
-    const normalizedRows = this.normalizeNoticeCriteriaToIrAxes(
-      rows.map((row) => ({
-        criteriaName: row.criteriaName,
+    const criteria = rows
+      .map((row) => ({
+        criteria_name: row.criteriaName,
         points: row.points ?? 0,
-        pitchcoachInterpretation: row.pitchcoachInterpretation ?? '',
-        irGuide: row.irGuide ?? '',
-      })),
-    );
-    const total = normalizedRows.reduce((sum, row) => sum + row.points, 0);
-    if (normalizedRows.length === 0 || total <= 0) return {};
+      }))
+      .filter((row) => row.criteria_name.trim().length > 0);
+    const total = criteria.reduce((sum, row) => sum + row.points, 0);
+    if (criteria.length === 0 || total <= 0) return {};
     return Object.fromEntries(
-      normalizedRows.map((row) => [
+      criteria.map((row) => [
         row.criteria_name,
         Number((row.points / total).toFixed(4)),
       ]),
@@ -884,20 +877,56 @@ export class DeckService {
 
           // Notice 평가기준과 매칭
           let criteriaIdMap: Record<string, string> = {};
+          let noticeCriteriaRows: Array<{
+            id: string;
+            criteriaName: string;
+            points: number | null;
+            pitchcoachInterpretation: string | null;
+            irGuide: string | null;
+          }> = [];
           if (irDeck.noticeId) {
             const noticeCriteria =
               await tx.noticeEvaluationCriteria.findMany({
                 where: { noticeId: irDeck.noticeId },
+                orderBy: { displayOrder: 'asc' },
               });
+            noticeCriteriaRows = noticeCriteria;
             criteriaIdMap = Object.fromEntries(
               noticeCriteria.map((c) => [c.criteriaName, c.id]),
             );
           }
 
           const criteriaScores = summary.criteria_scores ?? [];
-          if (criteriaScores.length > 0) {
+          const criteriaScoresByName = new Map(
+            criteriaScores.map((c) => [c.criteria_name, c]),
+          );
+          const mergedCriteriaScores =
+            noticeCriteriaRows.length > 0
+              ? noticeCriteriaRows.map((row) => {
+                  const aiScore = criteriaScoresByName.get(row.criteriaName);
+                  return (
+                    aiScore ?? {
+                      criteria_name: row.criteriaName,
+                      pitchcoach_interpretation:
+                        row.pitchcoachInterpretation ??
+                        `${row.criteriaName} 항목을 평가합니다.`,
+                      ir_guide:
+                        row.irGuide ??
+                        `${row.criteriaName} 관련 근거를 제시하세요.`,
+                      score: 0,
+                      max_score: 100,
+                      evidence_slides: [],
+                      related_slides: [],
+                      feedback:
+                        'AI 분석 결과에 해당 공고문 평가 기준의 개별 점수가 포함되지 않았습니다.',
+                    }
+                  );
+                })
+              : criteriaScores;
+
+          if (mergedCriteriaScores.length > 0) {
             await tx.criteriaScore.createMany({
-              data: criteriaScores.map((c) => ({
+              data: mergedCriteriaScores.map((c) => ({
                 deckScoreId: deckScore.id,
                 criteriaId: criteriaIdMap[c.criteria_name] ?? null,
                 criteriaName: c.criteria_name,

@@ -84,6 +84,18 @@ export class GetReportResponseDto {
   @ApiProperty({ description: '리포트 ID' })
   report_id!: string;
 
+  @ApiProperty({ description: 'Pitch ID' })
+  pitch_id!: string;
+
+  @ApiPropertyOptional({ description: '공고 ID (notice 상세 조회용)', nullable: true })
+  notice_id!: string | null;
+
+  @ApiPropertyOptional({ description: 'IR 덱 ID (슬라이드 조회용: GET /api/ir-decks/{id}/slides)', nullable: true })
+  ir_deck_id!: string | null;
+
+  @ApiPropertyOptional({ description: '음성 분석 ID (슬라이드 조회용: GET /api/voice/{id}/slides)', nullable: true })
+  voice_analysis_id!: string | null;
+
   @ApiProperty({ type: ReportSectionDto })
   notice!: ReportSectionDto;
 

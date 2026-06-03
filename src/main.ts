@@ -9,6 +9,8 @@ import { NoticeModule } from './modules/notice/notice.module';
 import { DeckModule } from './modules/deck/deck.module';
 import { PitchModule } from './modules/pitch/pitch.module';
 import { RehearsalModule } from './modules/rehearsal/rehearsal.module';
+import { ReportModule } from './modules/report/report.module';
+import { QaModule } from './modules/qa/qa.module';
 
 function getAllowedOrigins() {
   const defaults = [
@@ -62,6 +64,8 @@ async function bootstrap() {
       DeckModule,
       PitchModule,
       RehearsalModule,
+      ReportModule,
+      QaModule,
     ],
   });
   SwaggerModule.setup('api-docs', app, document);

@@ -207,6 +207,53 @@ export interface AiQaAnswerResult {
   weaknesses: string | null;
 }
 
+// ── AI Report 타입 ──
+
+export interface AiReportRadarChart {
+  labels: string[];
+  scores: number[];
+}
+
+export interface AiReportBarChartItem {
+  label: string;
+  score: number;
+}
+
+export interface AiReportBarChart {
+  items: AiReportBarChartItem[];
+}
+
+export interface AiReportDetailScore {
+  title: string;
+  score: number;
+  description: string;
+  strengths: string[];
+  improvements: string[];
+}
+
+export interface AiReportResult {
+  pitch_id: string;
+  final_score: number;
+  radar_chart: AiReportRadarChart;
+  bar_chart: AiReportBarChart;
+  detail_scores: AiReportDetailScore[];
+  improvement_points: string[];
+  summary: string;
+  generated_at: string;
+}
+
+export interface AiReportGenerateParams {
+  pitchId: string;
+  ir_deck_summary: string;
+  voice_summary: string;
+  notice_summary: string;
+  qa_summary: string;
+  ir_deck_score: number;
+  voice_score: number;
+  notice_score: number;
+  qa_score: number;
+}
+
 @Injectable()
 export class FastApiClient {
   private readonly logger = new Logger(FastApiClient.name);
@@ -409,5 +456,15 @@ export class FastApiClient {
       { headers: form.getHeaders() },
     );
     return res.data as AiQaAnswerResult;
+  }
+
+  async generateAiReport(params: AiReportGenerateParams): Promise<AiReportResult> {
+    const { pitchId, ...body } = params;
+    const res = await axios.post(
+      `${this.baseUrl}/api/pitches/${pitchId}/report/generate`,
+      body,
+      { headers: { 'Content-Type': 'application/json' } },
+    );
+    return res.data as AiReportResult;
   }
 }

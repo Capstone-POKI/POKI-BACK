@@ -2,9 +2,11 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { FastApiClient, AiReportResult } from '../../infra/fastapi/fastapi.client';
 import { GetReportResponseDto } from './dto/get-report.response.dto';
 import { CreateReportResponseDto } from './dto/create-report.response.dto';
 
@@ -136,7 +138,12 @@ type ReportRow = {
 
 @Injectable()
 export class ReportService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReportService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fastApiClient: FastApiClient,
+  ) {}
 
   async getOne(userId: string, reportId: string): Promise<GetReportResponseDto> {
     const report = await this.prisma.report.findUnique({
@@ -180,6 +187,8 @@ export class ReportService {
       });
     }
 
+    const aiChartData = this.parseAiChartData(report.chartData);
+
     return {
       report_id: report.id,
       notice: {
@@ -200,6 +209,7 @@ export class ReportService {
       },
       final_score: report.finalScore,
       chart_data: this.parseChartData(report.chartData, report),
+      ai_report: aiChartData,
       updated_at: report.updatedAt.toISOString(),
     };
   }
@@ -245,6 +255,35 @@ export class ReportService {
     const finalScore = clampScore(average([noticeScore, irDeckScore, voiceScore, qaScore]));
     const generatedAt = new Date();
 
+    const noticeSummary = this.buildNoticeSummary(notice, noticeScore);
+    const irDeckSummary = this.buildIrDeckSummary(irDeck, irDeckScore);
+    const voiceSummary = this.buildVoiceSummary(rehearsal, voiceScore);
+    const qaSummary = this.buildQaSummary(qaTraining, qaScore);
+
+    // AI 서버 호출로 상세 리포트 생성 시도
+    let chartData: string;
+    try {
+      const aiReport = await this.fastApiClient.generateAiReport({
+        pitchId,
+        ir_deck_summary: irDeckSummary,
+        voice_summary: voiceSummary,
+        notice_summary: noticeSummary,
+        qa_summary: qaSummary,
+        ir_deck_score: irDeckScore,
+        voice_score: voiceScore,
+        notice_score: noticeScore,
+        qa_score: qaScore,
+      });
+      // AI 결과를 chartData 필드에 저장 (ai_report 키로 래핑)
+      chartData = JSON.stringify({ ai_report: aiReport });
+      this.logger.log(`AI 리포트 생성 성공 (pitchId=${pitchId}, final_score=${aiReport.final_score})`);
+    } catch (err) {
+      this.logger.warn(`AI 리포트 생성 실패, rule-based 폴백 사용 (pitchId=${pitchId}): ${String(err)}`);
+      chartData = JSON.stringify(
+        this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
+      );
+    }
+
     const report = await this.prisma.report.upsert({
       where: { pitchId },
       create: {
@@ -252,36 +291,32 @@ export class ReportService {
         noticeId: notice.id,
         irDeckId: irDeck.id,
         rehearsalId: rehearsal.id,
-        noticeSummary: this.buildNoticeSummary(notice, noticeScore),
+        noticeSummary,
         noticeScore,
-        irDeckSummary: this.buildIrDeckSummary(irDeck, irDeckScore),
+        irDeckSummary,
         irDeckScore,
-        voiceSummary: this.buildVoiceSummary(rehearsal, voiceScore),
+        voiceSummary,
         voiceScore,
-        qaSummary: this.buildQaSummary(qaTraining, qaScore),
+        qaSummary,
         qaScore,
         finalScore,
-        chartData: JSON.stringify(
-          this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
-        ),
+        chartData,
         generatedAt,
       },
       update: {
         noticeId: notice.id,
         irDeckId: irDeck.id,
         rehearsalId: rehearsal.id,
-        noticeSummary: this.buildNoticeSummary(notice, noticeScore),
+        noticeSummary,
         noticeScore,
-        irDeckSummary: this.buildIrDeckSummary(irDeck, irDeckScore),
+        irDeckSummary,
         irDeckScore,
-        voiceSummary: this.buildVoiceSummary(rehearsal, voiceScore),
+        voiceSummary,
         voiceScore,
-        qaSummary: this.buildQaSummary(qaTraining, qaScore),
+        qaSummary,
         qaScore,
         finalScore,
-        chartData: JSON.stringify(
-          this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
-        ),
+        chartData,
         generatedAt,
       },
     });
@@ -301,6 +336,23 @@ export class ReportService {
       generated_at: report.generatedAt.toISOString(),
       updated_at: report.updatedAt.toISOString(),
     };
+  }
+
+  private parseAiChartData(value: string | null): AiReportResult | null {
+    if (!value) return null;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') {
+        const asObj = parsed as Record<string, unknown>;
+        // chartData가 { ai_report: AiReportResult } 형태인 경우
+        if (asObj.ai_report && typeof asObj.ai_report === 'object') {
+          return asObj.ai_report as AiReportResult;
+        }
+      }
+    } catch {
+      // 파싱 실패 시 null 반환
+    }
+    return null;
   }
 
   private parseChartData(

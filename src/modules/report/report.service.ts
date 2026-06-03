@@ -117,6 +117,9 @@ function parseStringArray(value: string | null | undefined): string[] {
 type ReportRow = {
   id: string;
   pitchId: string;
+  noticeId: string | null;
+  irDeckId: string | null;
+  rehearsalId: string | null;
   noticeSummary: string | null;
   noticeScore: number | null;
   irDeckSummary: string | null;
@@ -151,6 +154,9 @@ export class ReportService {
       select: {
         id: true,
         pitchId: true,
+        noticeId: true,
+        irDeckId: true,
+        rehearsalId: true,
         noticeSummary: true,
         noticeScore: true,
         irDeckSummary: true,
@@ -191,6 +197,10 @@ export class ReportService {
 
     return {
       report_id: report.id,
+      pitch_id: report.pitchId,
+      notice_id: report.noticeId ?? null,
+      ir_deck_id: report.irDeckId ?? null,
+      voice_analysis_id: report.rehearsalId ?? null,
       notice: {
         summary: report.noticeSummary ?? '',
         score: report.noticeScore ?? 0,

@@ -5,6 +5,7 @@ import { ReportController } from '../src/modules/report/report.controller';
 import { ReportService } from '../src/modules/report/report.service';
 import { PrismaService } from '../src/infra/prisma/prisma.service';
 import { JwtAuthGuard } from '../src/modules/auth/guards/jwt-auth.guard';
+import { FastApiClient } from '../src/infra/fastapi/fastapi.client';
 
 describe('Report create (e2e)', () => {
   let app: INestApplication;
@@ -31,6 +32,10 @@ describe('Report create (e2e)', () => {
     },
   } as any as PrismaService;
 
+  const mockFastApiClient = {
+    generateAiReport: jest.fn().mockRejectedValue(new Error('AI disabled in tests')),
+  } as unknown as FastApiClient;
+
   const mockGuard = {
     canActivate: (context: any) => {
       const req = context.switchToHttp().getRequest();
@@ -45,6 +50,7 @@ describe('Report create (e2e)', () => {
       providers: [
         ReportService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: FastApiClient, useValue: mockFastApiClient },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -174,6 +180,108 @@ describe('Report create (e2e)', () => {
     expect(mockPrisma.report.upsert).toHaveBeenCalledTimes(1);
   });
 
+  it('returns 201 when QA questions exist but are not answered yet', async () => {
+    mockPrisma.pitch.findUnique.mockResolvedValue({
+      id: 'pitch-1',
+      userId: 'user-1',
+      isDeleted: false,
+    });
+    mockPrisma.notice.findFirst.mockResolvedValue({
+      id: 'notice-1',
+      pitchId: 'pitch-1',
+      noticeName: '스타트업 공고',
+      hostOrganization: '중기부',
+      recruitmentType: '창업지원',
+      targetAudience: '예비창업자',
+      applicationPeriod: '2026-03-01 ~ 2026-03-31',
+      summary: '공고문 요약',
+      coreRequirements: '핵심요건',
+      additionalCriteria: '추가조건',
+      irDeckGuide: 'IR Deck 가이드',
+      evaluationCriteria: [
+        {
+          id: 'criteria-1',
+          criteriaName: '문제정의',
+          points: 20,
+          pitchcoachInterpretation: '문제정의 해석',
+          irGuide: '문제정의 가이드',
+        },
+        {
+          id: 'criteria-2',
+          criteriaName: '솔루션',
+          points: 20,
+          pitchcoachInterpretation: '솔루션 해석',
+          irGuide: '솔루션 가이드',
+        },
+        {
+          id: 'criteria-3',
+          criteriaName: '시장성',
+          points: 20,
+          pitchcoachInterpretation: '시장성 해석',
+          irGuide: '시장성 가이드',
+        },
+      ],
+    });
+    mockPrisma.iRDeck.findFirst.mockResolvedValue({
+      id: 'deck-1',
+      pitchId: 'pitch-1',
+      totalScore: 78,
+      presentationGuide: '발표 가이드',
+      emphasizedSlides: '3, 4',
+      improvedItems: '보완 항목',
+      deckScore: null,
+    });
+    mockPrisma.rehearsal.findFirst.mockResolvedValue({
+      id: 'voice-1',
+      pitchId: 'pitch-1',
+      totalScore: 75,
+      structureSummary: '발표 구조 요약',
+      overallStrengths: '["강점A"]',
+      overallImprovements: '["개선A"]',
+      improvedItems: '개선 포인트',
+      detailScores: [],
+    });
+    mockPrisma.qATraining.findFirst.mockResolvedValue({
+      id: 'qa-1',
+      pitchId: 'pitch-1',
+      mode: 'REALTIME',
+      totalScore: null,
+      questions: [
+        {
+          id: 'q-1',
+          category: 'NOTICE',
+          displayOrder: 1,
+          answer: null,
+        },
+        {
+          id: 'q-2',
+          category: 'BUSINESS',
+          displayOrder: 2,
+          answer: null,
+        },
+      ],
+    });
+    mockPrisma.report.upsert.mockResolvedValue({
+      id: 'report-1',
+      pitchId: 'pitch-1',
+      noticeId: 'notice-1',
+      irDeckId: 'deck-1',
+      rehearsalId: 'voice-1',
+      generatedAt: new Date('2026-03-12T15:00:00Z'),
+      updatedAt: new Date('2026-03-12T15:00:00Z'),
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/api/pitches/pitch-1/report')
+      .set('Authorization', 'Bearer FAKE');
+
+    expect(res.status).toBe(201);
+    expect(res.body.qa_training_id).toBe('qa-1');
+    expect(res.body.qa_score).toBe(0);
+    expect(res.body.final_score).toBeGreaterThan(0);
+    expect(mockPrisma.report.upsert).toHaveBeenCalledTimes(1);
+  });
+
   it('returns 409 when required analysis data is missing', async () => {
     mockPrisma.pitch.findUnique.mockResolvedValue({
       id: 'pitch-1',
@@ -229,6 +337,10 @@ describe('Report create (e2e)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       report_id: 'report-1',
+      pitch_id: 'pitch-1',
+      notice_id: null,
+      ir_deck_id: null,
+      voice_analysis_id: null,
       notice: {
         summary:
           '본 공고는 예비창업자를 대상으로 하며 시장성, 문제정의, 실행가능성 중심의 평가를 요구합니다.',
@@ -254,6 +366,7 @@ describe('Report create (e2e)', () => {
         labels: ['공고문', 'IR Deck', '음성', 'Q&A'],
         scores: [82, 78, 75, 80],
       },
+      ai_report: null,
       updated_at: '2026-03-12T15:00:00.000Z',
     });
   });

@@ -251,7 +251,7 @@ export class ReportService {
       this.findLatestCompletedQaTraining(pitchId),
     ]);
 
-    if (!notice || !irDeck || !rehearsal || !qaTraining) {
+    if (!notice || !irDeck || !rehearsal) {
       throw new ConflictException({
         error: 'INSUFFICIENT_ANALYSIS_DATA',
         message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
@@ -261,14 +261,20 @@ export class ReportService {
     const noticeScore = this.calculateNoticeScore(notice);
     const irDeckScore = this.calculateIrDeckScore(irDeck);
     const voiceScore = this.calculateVoiceScore(rehearsal);
-    const qaScore = this.calculateQaScore(qaTraining);
-    const finalScore = clampScore(average([noticeScore, irDeckScore, voiceScore, qaScore]));
+    const qaScore = qaTraining ? this.calculateQaScore(qaTraining) : 0;
+    const scoreInputs = [noticeScore, irDeckScore, voiceScore];
+    if (this.hasEvaluatedQaTraining(qaTraining)) {
+      scoreInputs.push(qaScore);
+    }
+    const finalScore = clampScore(average(scoreInputs));
     const generatedAt = new Date();
 
     const noticeSummary = this.buildNoticeSummary(notice, noticeScore);
     const irDeckSummary = this.buildIrDeckSummary(irDeck, irDeckScore);
     const voiceSummary = this.buildVoiceSummary(rehearsal, voiceScore);
-    const qaSummary = this.buildQaSummary(qaTraining, qaScore);
+    const qaSummary = qaTraining
+      ? this.buildQaSummary(qaTraining, qaScore)
+      : this.buildSkippedQaSummary();
 
     // AI 서버 호출로 상세 리포트 생성 시도
     let chartData: string;
@@ -337,7 +343,7 @@ export class ReportService {
       notice_id: report.noticeId,
       ir_deck_id: report.irDeckId,
       voice_analysis_id: report.rehearsalId,
-      qa_training_id: qaTraining.id,
+      qa_training_id: qaTraining?.id ?? null,
       notice_score: noticeScore,
       ir_deck_score: irDeckScore,
       voice_score: voiceScore,
@@ -572,31 +578,42 @@ export class ReportService {
     }
 
     const answeredQuestions = training.questions.filter((question) => Boolean(question.answer));
-    if (answeredQuestions.length !== training.questions.length || answeredQuestions.length === 0) {
-      throw new ConflictException({
-        error: 'INSUFFICIENT_ANALYSIS_DATA',
-        message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
-      });
+    if (answeredQuestions.length === 0) {
+      return 0;
     }
 
-    const answerScores = answeredQuestions.map((question) => {
-      const scores = [
-        question.answer?.briefnessScore,
-        question.answer?.evidenceScore,
-        question.answer?.structureScore,
-      ].filter((score): score is number => score != null);
+    const answerScores = answeredQuestions
+      .map((question) => {
+        const scores = [
+          question.answer?.briefnessScore,
+          question.answer?.evidenceScore,
+          question.answer?.structureScore,
+        ].filter((score): score is number => score != null);
 
-      if (scores.length === 0) {
-        throw new ConflictException({
-          error: 'INSUFFICIENT_ANALYSIS_DATA',
-          message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
-        });
-      }
+        return scores.length > 0 ? average(scores) : null;
+      })
+      .filter((score): score is number => score != null);
 
-      return average(scores);
-    });
+    if (answerScores.length === 0) {
+      return 0;
+    }
 
     return clampScore(average(answerScores));
+  }
+
+  private hasEvaluatedQaTraining(training: QaTrainingRow | null): boolean {
+    if (!training) return false;
+    if (training.totalScore != null) return true;
+
+    return training.questions.some((question) => {
+      const answer = question.answer;
+      return Boolean(
+        answer &&
+          (answer.briefnessScore != null ||
+            answer.evidenceScore != null ||
+            answer.structureScore != null),
+      );
+    });
   }
 
   private buildNoticeSummary(notice: NoticeRow, score: number): string {
@@ -663,6 +680,10 @@ export class ReportService {
     ]
       .filter((line): line is string => Boolean(line))
       .join(' | ');
+  }
+
+  private buildSkippedQaSummary(): string {
+    return ['Q&A 훈련 점수 0점', '응답 완료: 0/0'].join(' | ');
   }
 
   private buildChartData(

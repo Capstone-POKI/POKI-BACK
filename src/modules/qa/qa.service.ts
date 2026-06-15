@@ -7,7 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
-import { FastApiClient, AiQaAnswerResult } from '../../infra/fastapi/fastapi.client';
+import {
+  FastApiClient,
+  AiQaAnswerResult,
+} from '../../infra/fastapi/fastapi.client';
 import { GetQAAnswerResponseDto } from './dto/get-answer.response.dto';
 import { GetQAQuestionsResponseDto } from './dto/get-qa-questions.response.dto';
 import { QAModeEnum, SetQAModeDto } from './dto/set-qa-mode.dto';
@@ -17,10 +20,22 @@ import * as path from 'path';
 import { assertAudioFile } from '../../common/file-validation';
 import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
-const QA_ALLOWED_EXTENSIONS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
+const QA_ALLOWED_EXTENSIONS = new Set([
+  '.webm',
+  '.mp3',
+  '.m4a',
+  '.wav',
+  '.ogg',
+  '.mp4',
+]);
 const QA_ALLOWED_MIMETYPES = new Set([
-  'audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/m4a',
-  'audio/wav', 'audio/ogg', 'video/webm',
+  'audio/webm',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/wav',
+  'audio/ogg',
+  'video/webm',
 ]);
 const QA_MAX_FILE_SIZE = 25 * 1024 * 1024;
 
@@ -308,7 +323,9 @@ export class QaService {
     });
   }
 
-  private validateAnswerAudioFile(file?: QAUploadFile): asserts file is QAUploadFile {
+  private validateAnswerAudioFile(
+    file?: QAUploadFile,
+  ): asserts file is QAUploadFile {
     if (!file || !file.buffer || file.size <= 0) {
       throw new BadRequestException({
         error: 'INVALID_AUDIO_FILE',
@@ -326,7 +343,10 @@ export class QaService {
     assertAudioFile(file as Express.Multer.File);
 
     const ext = path.extname(file.originalname).toLowerCase();
-    if (!QA_ALLOWED_EXTENSIONS.has(ext) && !QA_ALLOWED_MIMETYPES.has(file.mimetype)) {
+    if (
+      !QA_ALLOWED_EXTENSIONS.has(ext) &&
+      !QA_ALLOWED_MIMETYPES.has(file.mimetype)
+    ) {
       throw new BadRequestException({
         error: 'INVALID_AUDIO_FILE',
         message: '지원하지 않는 음성 파일 형식입니다.',
@@ -353,7 +373,9 @@ export class QaService {
     };
   }
 
-  private mapQAAnswerDetailResponse(answer: QAAnswerRow): GetQAAnswerResponseDto {
+  private mapQAAnswerDetailResponse(
+    answer: QAAnswerRow,
+  ): GetQAAnswerResponseDto {
     return {
       answer_id: answer.id,
       question_id: answer.questionId,
@@ -675,7 +697,7 @@ export class QaService {
   ): Promise<SubmitAnswerResponseDto> {
     this.validateAnswerAudioFile(file);
 
-    const question = await this.prisma.qAQuestion.findUnique({
+    const question = (await this.prisma.qAQuestion.findUnique({
       where: { id: questionId },
       select: {
         id: true,
@@ -701,7 +723,7 @@ export class QaService {
           },
         },
       },
-    }) as QAAnswerSubmissionQuestionRow | null;
+    })) as QAAnswerSubmissionQuestionRow | null;
 
     if (!question || question.qaTraining.pitch.isDeleted) {
       throw new NotFoundException({
@@ -769,7 +791,7 @@ export class QaService {
     userId: string,
     answerId: string,
   ): Promise<GetQAAnswerResponseDto> {
-    const answer = await this.prisma.qAAnswer.findUnique({
+    const answer = (await this.prisma.qAAnswer.findUnique({
       where: { id: answerId },
       select: {
         id: true,
@@ -802,7 +824,7 @@ export class QaService {
           },
         },
       },
-    }) as QAAnswerDetailRow | null;
+    })) as QAAnswerDetailRow | null;
 
     if (
       !answer ||

@@ -21,9 +21,12 @@ const AUDIO_MIME_TYPES = new Set([
   'video/mp4',
 ]);
 
-export function assertPdfFile(file?: Express.Multer.File): asserts file is Express.Multer.File {
+export function assertPdfFile(
+  file?: Express.Multer.File,
+): asserts file is Express.Multer.File {
   const extension = path.extname(file?.originalname ?? '').toLowerCase();
-  const hasPdfSignature = file?.buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+  const hasPdfSignature =
+    file?.buffer.subarray(0, 5).toString('ascii') === '%PDF-';
 
   if (
     !file ||
@@ -54,7 +57,9 @@ function hasAudioSignature(buffer: Buffer): boolean {
     return true;
   }
   if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return true;
-  return buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp';
+  return (
+    buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp'
+  );
 }
 
 export function assertAudioFile(

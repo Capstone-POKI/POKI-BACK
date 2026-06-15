@@ -56,12 +56,9 @@ describe('DeckService notice criteria mapping', () => {
       'notice-1',
     );
 
-    expect(strategy.evaluation_criteria.map((row: any) => row.criteria_name)).toEqual([
-      '혁신성',
-      '시장성',
-      '성장성',
-      '창업가(팀) 역량',
-    ]);
+    expect(
+      strategy.evaluation_criteria.map((row: any) => row.criteria_name),
+    ).toEqual(['혁신성', '시장성', '성장성', '창업가(팀) 역량']);
   });
 
   it('criteria weights are based on original notice criteria', async () => {

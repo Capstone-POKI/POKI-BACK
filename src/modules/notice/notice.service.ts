@@ -47,35 +47,122 @@ interface CriteriaTemplate {
   irGuide: string;
 }
 
-/* eslint-disable prettier/prettier */
 const GOV_CRITERIA: CriteriaTemplate[] = [
-  { name: '문제정의', points: 20, interpretation: '사회·산업 문제의 구체성과 검증 근거를 평가합니다.', irGuide: '문제 규모와 수혜대상, 검증 데이터(인터뷰/설문)를 포함하세요.' },
-  { name: '솔루션', points: 15, interpretation: '해결책의 실현 가능성과 차별성을 평가합니다.', irGuide: '핵심 기능과 구현 단계(MVP/실증), 차별점 3가지를 제시하세요.' },
-  { name: '시장/비즈니스', points: 15, interpretation: '지속 가능 운영 구조와 시장 타당성을 평가합니다.', irGuide: '시장 추정 근거와 운영 모델(지원 종료 후 자립 방안)을 명시하세요.' },
-  { name: '실적', points: 15, interpretation: '현장 검증, 실증 결과, 성장 추세를 평가합니다.', irGuide: '파일럿 결과와 핵심 지표를 시계열로 제시하세요.' },
-  { name: '팀', points: 15, interpretation: '공공사업 수행 역량과 팀 구성 적합성을 평가합니다.', irGuide: '역할 분담, 산업 경험, 외부 자문 체계를 보여주세요.' },
-  { name: '자금 계획', points: 20, interpretation: '예산 배분과 로드맵 정합성을 평가합니다.', irGuide: '항목별 예산, 분기별 마일스톤, 지원 종료 후 계획을 포함하세요.' },
+  {
+    name: '문제정의',
+    points: 20,
+    interpretation: '사회·산업 문제의 구체성과 검증 근거를 평가합니다.',
+    irGuide: '문제 규모와 수혜대상, 검증 데이터(인터뷰/설문)를 포함하세요.',
+  },
+  {
+    name: '솔루션',
+    points: 15,
+    interpretation: '해결책의 실현 가능성과 차별성을 평가합니다.',
+    irGuide: '핵심 기능과 구현 단계(MVP/실증), 차별점 3가지를 제시하세요.',
+  },
+  {
+    name: '시장/비즈니스',
+    points: 15,
+    interpretation: '지속 가능 운영 구조와 시장 타당성을 평가합니다.',
+    irGuide: '시장 추정 근거와 운영 모델(지원 종료 후 자립 방안)을 명시하세요.',
+  },
+  {
+    name: '실적',
+    points: 15,
+    interpretation: '현장 검증, 실증 결과, 성장 추세를 평가합니다.',
+    irGuide: '파일럿 결과와 핵심 지표를 시계열로 제시하세요.',
+  },
+  {
+    name: '팀',
+    points: 15,
+    interpretation: '공공사업 수행 역량과 팀 구성 적합성을 평가합니다.',
+    irGuide: '역할 분담, 산업 경험, 외부 자문 체계를 보여주세요.',
+  },
+  {
+    name: '자금 계획',
+    points: 20,
+    interpretation: '예산 배분과 로드맵 정합성을 평가합니다.',
+    irGuide: '항목별 예산, 분기별 마일스톤, 지원 종료 후 계획을 포함하세요.',
+  },
 ];
 
 const COMP_CRITERIA: CriteriaTemplate[] = [
-  { name: '문제정의', points: 25, interpretation: '문제의 현실성과 임팩트를 평가합니다.', irGuide: '타겟 고객의 불편과 문제 규모를 수치/사례로 제시하세요.' },
-  { name: '솔루션', points: 25, interpretation: '아이디어의 창의성과 해결력, 데모 완성도를 평가합니다.', irGuide: '문제-해결 매핑, 핵심 기능 3~5개, 사용 시나리오를 보여주세요.' },
-  { name: '시장/비즈니스', points: 20, interpretation: '시장성 및 수익화 가능성을 평가합니다.', irGuide: '시장 크기와 BM(가격/수익 구조)을 명확히 제시하세요.' },
-  { name: '실적', points: 10, interpretation: '초기 검증 및 사용자 반응을 평가합니다.', irGuide: '파일럿/설문/사용자 반응 등 검증 근거를 포함하세요.' },
-  { name: '팀', points: 10, interpretation: '팀 실행력을 평가합니다.', irGuide: '핵심 인력 역할과 프로젝트 실행 이력을 보여주세요.' },
-  { name: '자금 계획', points: 10, interpretation: '자금 사용 계획과 성장 로드맵을 평가합니다.', irGuide: '필요 자금, 사용 우선순위, 1~3년 목표를 제시하세요.' },
+  {
+    name: '문제정의',
+    points: 25,
+    interpretation: '문제의 현실성과 임팩트를 평가합니다.',
+    irGuide: '타겟 고객의 불편과 문제 규모를 수치/사례로 제시하세요.',
+  },
+  {
+    name: '솔루션',
+    points: 25,
+    interpretation: '아이디어의 창의성과 해결력, 데모 완성도를 평가합니다.',
+    irGuide: '문제-해결 매핑, 핵심 기능 3~5개, 사용 시나리오를 보여주세요.',
+  },
+  {
+    name: '시장/비즈니스',
+    points: 20,
+    interpretation: '시장성 및 수익화 가능성을 평가합니다.',
+    irGuide: '시장 크기와 BM(가격/수익 구조)을 명확히 제시하세요.',
+  },
+  {
+    name: '실적',
+    points: 10,
+    interpretation: '초기 검증 및 사용자 반응을 평가합니다.',
+    irGuide: '파일럿/설문/사용자 반응 등 검증 근거를 포함하세요.',
+  },
+  {
+    name: '팀',
+    points: 10,
+    interpretation: '팀 실행력을 평가합니다.',
+    irGuide: '핵심 인력 역할과 프로젝트 실행 이력을 보여주세요.',
+  },
+  {
+    name: '자금 계획',
+    points: 10,
+    interpretation: '자금 사용 계획과 성장 로드맵을 평가합니다.',
+    irGuide: '필요 자금, 사용 우선순위, 1~3년 목표를 제시하세요.',
+  },
 ];
 
 const DEFAULT_CRITERIA_LIST: CriteriaTemplate[] = [
-  { name: '문제정의', points: 15, interpretation: '문제의 구체성과 고객 검증을 평가합니다.', irGuide: '고객 페르소나, 문제 규모, 기존 한계를 포함하세요.' },
-  { name: '솔루션', points: 20, interpretation: '해결책의 명확성과 차별화를 평가합니다.', irGuide: '차별점 3가지, 핵심 기능, MVP 단계를 제시하세요.' },
-  { name: '시장/비즈니스', points: 25, interpretation: '시장 규모와 수익 모델 타당성을 평가합니다.', irGuide: 'TAM/SAM/SOM, 가격 정책, 수익 계산식을 포함하세요.' },
-  { name: '실적', points: 20, interpretation: '트랙션과 성장 속도를 평가합니다.', irGuide: 'MAU/매출/전환율 등 핵심 지표를 제시하세요.' },
-  { name: '팀', points: 10, interpretation: '팀의 실행 역량을 평가합니다.', irGuide: '핵심 멤버 경력과 역할 분담을 명확히 하세요.' },
-  { name: '자금 계획', points: 10, interpretation: '자금 사용 계획과 마일스톤 정합성을 평가합니다.', irGuide: '투자/지원금 배분과 BEP/로드맵을 제시하세요.' },
+  {
+    name: '문제정의',
+    points: 15,
+    interpretation: '문제의 구체성과 고객 검증을 평가합니다.',
+    irGuide: '고객 페르소나, 문제 규모, 기존 한계를 포함하세요.',
+  },
+  {
+    name: '솔루션',
+    points: 20,
+    interpretation: '해결책의 명확성과 차별화를 평가합니다.',
+    irGuide: '차별점 3가지, 핵심 기능, MVP 단계를 제시하세요.',
+  },
+  {
+    name: '시장/비즈니스',
+    points: 25,
+    interpretation: '시장 규모와 수익 모델 타당성을 평가합니다.',
+    irGuide: 'TAM/SAM/SOM, 가격 정책, 수익 계산식을 포함하세요.',
+  },
+  {
+    name: '실적',
+    points: 20,
+    interpretation: '트랙션과 성장 속도를 평가합니다.',
+    irGuide: 'MAU/매출/전환율 등 핵심 지표를 제시하세요.',
+  },
+  {
+    name: '팀',
+    points: 10,
+    interpretation: '팀의 실행 역량을 평가합니다.',
+    irGuide: '핵심 멤버 경력과 역할 분담을 명확히 하세요.',
+  },
+  {
+    name: '자금 계획',
+    points: 10,
+    interpretation: '자금 사용 계획과 마일스톤 정합성을 평가합니다.',
+    irGuide: '투자/지원금 배분과 BEP/로드맵을 제시하세요.',
+  },
 ];
-/* eslint-enable prettier/prettier */
-
 const CRITERIA_MAP: Record<string, CriteriaTemplate[]> = {
   GOVERNMENT: GOV_CRITERIA,
   COMPETITION: COMP_CRITERIA,

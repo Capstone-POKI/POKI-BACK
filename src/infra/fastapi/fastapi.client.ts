@@ -403,7 +403,9 @@ export class FastApiClient {
       form.append('context_json', JSON.stringify(context));
     }
     // options_json에는 scenario만 전달 (slide_timestamps는 Form 필드로 별도 전송)
-    const optionsToSend = options?.scenario ? { scenario: options.scenario } : null;
+    const optionsToSend = options?.scenario
+      ? { scenario: options.scenario }
+      : null;
     if (optionsToSend) {
       form.append('options_json', JSON.stringify(optionsToSend));
     }
@@ -487,7 +489,9 @@ export class FastApiClient {
     return res.data as AiQaAnswerResult;
   }
 
-  async generateAiReport(params: AiReportGenerateParams): Promise<AiReportResult> {
+  async generateAiReport(
+    params: AiReportGenerateParams,
+  ): Promise<AiReportResult> {
     const { pitchId, ...body } = params;
     const res = await axios.post(
       `${this.baseUrl}/api/pitches/${pitchId}/report/generate`,

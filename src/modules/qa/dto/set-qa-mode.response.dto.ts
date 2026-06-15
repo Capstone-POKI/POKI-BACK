@@ -20,7 +20,8 @@ export class QAQuestionDto {
   display_order!: number;
 
   @ApiProperty({
-    example: '현재 고객이 겪는 가장 큰 문제는 무엇이며, 왜 반드시 해결되어야 하나요?',
+    example:
+      '현재 고객이 겪는 가장 큰 문제는 무엇이며, 왜 반드시 해결되어야 하나요?',
     description: '질문 본문',
   })
   question!: string;

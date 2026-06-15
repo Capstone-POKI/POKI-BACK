@@ -247,7 +247,9 @@ export class DeckService {
     interpretation: string,
     guide: string,
   ): CanonicalIrAxis {
-    const text = `${criteriaName} ${interpretation} ${guide}`.replace(/\s+/g, '').toLowerCase();
+    const text = `${criteriaName} ${interpretation} ${guide}`
+      .replace(/\s+/g, '')
+      .toLowerCase();
 
     if (
       text.includes('팀') ||
@@ -452,16 +454,16 @@ export class DeckService {
       criteria_scores: (ds?.criteriaScores ?? []).map((c) => ({
         criteria_name: c.criteriaName,
         pitchcoach_interpretation:
-          c.pitchcoachInterpretation ??
-          `${c.criteriaName} 항목을 평가합니다.`,
-        ir_guide:
-          c.irGuide ?? `${c.criteriaName} 관련 근거를 제시하세요.`,
+          c.pitchcoachInterpretation ?? `${c.criteriaName} 항목을 평가합니다.`,
+        ir_guide: c.irGuide ?? `${c.criteriaName} 관련 근거를 제시하세요.`,
         score: c.score,
         max_score: 100,
         raw_score: undefined,
         raw_max_score: undefined,
         coverage_status: undefined,
-        evidence_slides: safeJsonArray(c.relatedSlides).map((v) => Number(v)).filter((v) => Number.isInteger(v)),
+        evidence_slides: safeJsonArray(c.relatedSlides)
+          .map((v) => Number(v))
+          .filter((v) => Number.isInteger(v)),
         feedback: c.feedback ?? '',
       })),
       presentation_guide: {
@@ -829,10 +831,13 @@ export class DeckService {
         }
 
         const ds = summary.deck_score;
-        const pg = summary.presentation_guide ?? { guide: [], time_allocation: [], emphasized_slides: [] };
+        const pg = summary.presentation_guide ?? {
+          guide: [],
+          time_allocation: [],
+          emphasized_slides: [],
+        };
 
         await this.prisma.$transaction(async (tx) => {
-
           // 1. Deck 본체 갱신
           await tx.iRDeck.update({
             where: { id: irDeck.id },
@@ -884,11 +889,10 @@ export class DeckService {
             irGuide: string | null;
           }> = [];
           if (irDeck.noticeId) {
-            const noticeCriteria =
-              await tx.noticeEvaluationCriteria.findMany({
-                where: { noticeId: irDeck.noticeId },
-                orderBy: { displayOrder: 'asc' },
-              });
+            const noticeCriteria = await tx.noticeEvaluationCriteria.findMany({
+              where: { noticeId: irDeck.noticeId },
+              orderBy: { displayOrder: 'asc' },
+            });
             noticeCriteriaRows = noticeCriteria;
             criteriaIdMap = Object.fromEntries(
               noticeCriteria.map((c) => [c.criteriaName, c.id]),
@@ -985,8 +989,7 @@ export class DeckService {
             analysisStatus: 'FAILED',
             pdfUploadStatus: 'FAILED',
             errorMessage:
-              summary.error_message ??
-              'IR Deck 분석 중 오류가 발생했습니다.',
+              summary.error_message ?? 'IR Deck 분석 중 오류가 발생했습니다.',
           },
         });
         return true;

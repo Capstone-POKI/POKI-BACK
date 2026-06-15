@@ -9,7 +9,10 @@ export class ReportSectionDto {
 }
 
 export class ReportChartDataDto {
-  @ApiProperty({ description: '차트 라벨 목록', example: ['공고문', 'IR Deck', '음성', 'Q&A'] })
+  @ApiProperty({
+    description: '차트 라벨 목록',
+    example: ['공고문', 'IR Deck', '음성', 'Q&A'],
+  })
   labels!: string[];
 
   @ApiProperty({ description: '차트 점수 목록', example: [82, 78, 75, 80] })
@@ -30,7 +33,9 @@ export class AiReportBarChartDto {
 }
 
 export class AiReportRadarChartDto {
-  @ApiProperty({ example: ['문제정의', '솔루션', '시장성', '전달력', 'Q&A대응력'] })
+  @ApiProperty({
+    example: ['문제정의', '솔루션', '시장성', '전달력', 'Q&A대응력'],
+  })
   labels!: string[];
 
   @ApiProperty({ example: [80, 75, 88, 85, 74] })
@@ -70,7 +75,9 @@ export class AiReportDto {
   @ApiProperty({ type: [AiReportDetailScoreDto] })
   detail_scores!: AiReportDetailScoreDto[];
 
-  @ApiProperty({ example: ['핵심 키워드를 강조하세요', '재무 지표를 구체적으로 제시하세요'] })
+  @ApiProperty({
+    example: ['핵심 키워드를 강조하세요', '재무 지표를 구체적으로 제시하세요'],
+  })
   improvement_points!: string[];
 
   @ApiProperty()
@@ -87,13 +94,22 @@ export class GetReportResponseDto {
   @ApiProperty({ description: 'Pitch ID' })
   pitch_id!: string;
 
-  @ApiPropertyOptional({ description: '공고 ID (notice 상세 조회용)', nullable: true })
+  @ApiPropertyOptional({
+    description: '공고 ID (notice 상세 조회용)',
+    nullable: true,
+  })
   notice_id!: string | null;
 
-  @ApiPropertyOptional({ description: 'IR 덱 ID (슬라이드 조회용: GET /api/ir-decks/{id}/slides)', nullable: true })
+  @ApiPropertyOptional({
+    description: 'IR 덱 ID (슬라이드 조회용: GET /api/ir-decks/{id}/slides)',
+    nullable: true,
+  })
   ir_deck_id!: string | null;
 
-  @ApiPropertyOptional({ description: '음성 분석 ID (슬라이드 조회용: GET /api/voice/{id}/slides)', nullable: true })
+  @ApiPropertyOptional({
+    description: '음성 분석 ID (슬라이드 조회용: GET /api/voice/{id}/slides)',
+    nullable: true,
+  })
   voice_analysis_id!: string | null;
 
   @ApiProperty({ type: ReportSectionDto })
@@ -121,6 +137,9 @@ export class GetReportResponseDto {
   })
   ai_report!: AiReportDto | null;
 
-  @ApiProperty({ description: '최종 수정 시각', example: '2026-03-12T15:00:00Z' })
+  @ApiProperty({
+    description: '최종 수정 시각',
+    example: '2026-03-12T15:00:00Z',
+  })
   updated_at!: string;
 }

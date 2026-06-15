@@ -47,7 +47,10 @@ export class RehearsalController {
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })
   @ApiResponse({ status: 202, description: '음성 분석 시작됨' })
   @ApiResponse({ status: 400, schema: { example: { error: 'INVALID_FILE' } } })
-  @ApiResponse({ status: 404, schema: { example: { error: 'PITCH_NOT_FOUND' } } })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'PITCH_NOT_FOUND' } },
+  })
   uploadAndAnalyze(
     @Param('pitchId') pitchId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -66,7 +69,10 @@ export class RehearsalController {
   @ApiOperation({ summary: '음성 분석 결과 조회' })
   @ApiParam({ name: 'voiceId', description: 'Voice Analysis ID' })
   @ApiResponse({ status: 200, description: 'IN_PROGRESS | COMPLETED | FAILED' })
-  @ApiResponse({ status: 404, schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } } })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } },
+  })
   getResult(
     @Param('voiceId') voiceId: string,
     @Req() req: AuthenticatedRequest,
@@ -78,7 +84,10 @@ export class RehearsalController {
   @ApiOperation({ summary: '음성 분석 슬라이드별 결과 조회' })
   @ApiParam({ name: 'voiceId', description: 'Voice Analysis ID' })
   @ApiResponse({ status: 200, description: 'IN_PROGRESS | COMPLETED' })
-  @ApiResponse({ status: 404, schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } } })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } },
+  })
   getSlides(
     @Param('voiceId') voiceId: string,
     @Req() req: AuthenticatedRequest,

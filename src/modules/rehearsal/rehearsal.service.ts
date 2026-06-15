@@ -12,6 +12,7 @@ import {
   AiVoiceAnalyzeOptions,
 } from '../../infra/fastapi/fastapi.client';
 import { assertAudioFile } from '../../common/file-validation';
+import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (OpenAI Whisper API limit)
 const ALLOWED_MIMETYPES = new Set([
@@ -261,20 +262,6 @@ export class RehearsalService {
       });
     }
 
-    // Mark previous rehearsals as not latest
-    await this.prisma.rehearsal.updateMany({
-      where: { pitchId, isLatest: true },
-      data: { isLatest: false },
-    });
-
-    // Auto-increment rehearsal number
-    const lastRehearsal = await this.prisma.rehearsal.findFirst({
-      where: { pitchId },
-      orderBy: { rehearsalNumber: 'desc' },
-      select: { rehearsalNumber: true },
-    });
-    const rehearsalNumber = (lastRehearsal?.rehearsalNumber ?? 0) + 1;
-
     // Calculate duration if timestamps provided
     let audioDurationSeconds: number | undefined;
     if (slideTimestamps && slideTimestamps.length > 0) {
@@ -282,26 +269,46 @@ export class RehearsalService {
       audioDurationSeconds = Math.round(lastTs.end_timestamp);
     }
 
-    // Create rehearsal record
-    const rehearsal = await this.prisma.rehearsal.create({
-      data: {
-        pitchId,
-        irDeckId: latestDeck.id,
-        rehearsalNumber,
-        isLatest: true,
-        audioFileUrl: 'pending',
-        audioDurationSeconds: audioDurationSeconds ?? null,
-        audioDurationDisplay: audioDurationSeconds ? formatDuration(audioDurationSeconds) : null,
-        audioFormat: ext.replace('.', ''),
-        analysisStatus: 'IN_PROGRESS',
-      },
-    });
+    const rehearsal = await runSerializableTransaction(
+      this.prisma,
+      async (tx) => {
+        await tx.rehearsal.updateMany({
+          where: { pitchId, isLatest: true },
+          data: { isLatest: false },
+        });
 
-    // Update pitch status
-    await this.prisma.pitch.update({
-      where: { id: pitchId },
-      data: { status: 'REHEARSAL' },
-    });
+        const lastRehearsal = await tx.rehearsal.findFirst({
+          where: { pitchId },
+          orderBy: { rehearsalNumber: 'desc' },
+          select: { rehearsalNumber: true },
+        });
+
+        const createdRehearsal = await tx.rehearsal.create({
+          data: {
+            pitchId,
+            irDeckId: latestDeck.id,
+            rehearsalNumber: (lastRehearsal?.rehearsalNumber ?? 0) + 1,
+            isLatest: true,
+            audioFileUrl: 'pending',
+            audioDurationSeconds: audioDurationSeconds ?? null,
+            audioDurationDisplay: audioDurationSeconds
+              ? formatDuration(audioDurationSeconds)
+              : null,
+            audioFormat: ext.replace('.', ''),
+            analysisStatus: 'IN_PROGRESS',
+          },
+        });
+
+        await tx.pitch.update({
+          where: { id: pitchId },
+          data: { status: 'REHEARSAL' },
+        });
+
+        return createdRehearsal;
+      },
+    );
+
+    const rehearsalNumber = rehearsal.rehearsalNumber;
 
     const voiceContext = await this.buildVoiceAnalyzeContext(
       pitchId,

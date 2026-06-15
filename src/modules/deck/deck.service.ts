@@ -12,6 +12,7 @@ import {
   AiIrSlidesResponse,
 } from '../../infra/fastapi/fastapi.client';
 import { assertPdfFile } from '../../common/file-validation';
+import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const IR_DECK_SYNC_INTERVAL_MS = Number(
@@ -323,20 +324,6 @@ export class DeckService {
       });
     }
 
-    // 기존 latest 내림
-    await this.prisma.iRDeck.updateMany({
-      where: { pitchId, isLatest: true },
-      data: { isLatest: false },
-    });
-
-    // 다음 버전 계산
-    const latest = await this.prisma.iRDeck.findFirst({
-      where: { pitchId },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (latest?.version ?? 0) + 1;
-
     // 최신 Notice 참조
     const latestNotice = await this.prisma.notice.findFirst({
       where: { pitchId, isLatest: true },
@@ -349,23 +336,36 @@ export class DeckService {
       latestNotice?.id ?? null,
     );
 
-    // Deck row 생성
-    const irDeck = await this.prisma.iRDeck.create({
-      data: {
-        pitchId,
-        noticeId: latestNotice?.id ?? null,
-        pdfSizeBytes: file.size,
-        pdfUploadStatus: 'PROCESSING',
-        analysisStatus: 'IN_PROGRESS',
-        version: nextVersion,
-        isLatest: true,
-      },
-    });
+    const irDeck = await runSerializableTransaction(this.prisma, async (tx) => {
+      await tx.iRDeck.updateMany({
+        where: { pitchId, isLatest: true },
+        data: { isLatest: false },
+      });
 
-    // Pitch 상태 갱신
-    await this.prisma.pitch.update({
-      where: { id: pitchId },
-      data: { status: 'IRDECK_ANALYSIS' },
+      const latest = await tx.iRDeck.findFirst({
+        where: { pitchId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+
+      const createdDeck = await tx.iRDeck.create({
+        data: {
+          pitchId,
+          noticeId: latestNotice?.id ?? null,
+          pdfSizeBytes: file.size,
+          pdfUploadStatus: 'PROCESSING',
+          analysisStatus: 'IN_PROGRESS',
+          version: (latest?.version ?? 0) + 1,
+          isLatest: true,
+        },
+      });
+
+      await tx.pitch.update({
+        where: { id: pitchId },
+        data: { status: 'IRDECK_ANALYSIS' },
+      });
+
+      return createdDeck;
     });
 
     // AI 비동기 호출
@@ -381,7 +381,7 @@ export class DeckService {
       ir_deck_id: irDeck.id,
       pitch_id: pitchId,
       analysis_status: 'IN_PROGRESS' as const,
-      version: nextVersion,
+      version: irDeck.version,
       message: 'IR Deck 분석이 시작되었습니다.',
     };
   }

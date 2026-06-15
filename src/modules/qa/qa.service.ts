@@ -15,6 +15,7 @@ import { SetQAModeResponseDto } from './dto/set-qa-mode.response.dto';
 import { SubmitAnswerResponseDto } from './dto/submit-answer.response.dto';
 import * as path from 'path';
 import { assertAudioFile } from '../../common/file-validation';
+import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
 const QA_ALLOWED_EXTENSIONS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
 const QA_ALLOWED_MIMETYPES = new Set([
@@ -1249,47 +1250,50 @@ export class QaService {
             irDeck: normalizedIrDeck,
           });
 
-    const createdQATraining = await this.prisma.$transaction(async (tx) => {
-      const latestTraining = await tx.qATraining.findFirst({
-        where: { pitchId },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      });
+    const createdQATraining = await runSerializableTransaction(
+      this.prisma,
+      async (tx) => {
+        const latestTraining = await tx.qATraining.findFirst({
+          where: { pitchId },
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        });
 
-      await tx.qATraining.updateMany({
-        where: {
-          pitchId,
-          isLatest: true,
-        },
-        data: {
-          isLatest: false,
-        },
-      });
-
-      return tx.qATraining.create({
-        data: {
-          pitchId,
-          rehearsalId: latestRehearsal.id,
-          noticeId: latestNotice?.id ?? null,
-          irDeckId: latestIrDeck?.id ?? null,
-          voiceAnalysisId: latestRehearsal.id,
-          mode: dto.qa_mode,
-          totalQuestions: questions.length,
-          version: (latestTraining?.version ?? 0) + 1,
-          isLatest: true,
-          questions: {
-            create: questions,
+        await tx.qATraining.updateMany({
+          where: {
+            pitchId,
+            isLatest: true,
           },
-        },
-        include: {
-          questions: {
-            orderBy: {
-              displayOrder: 'asc',
+          data: {
+            isLatest: false,
+          },
+        });
+
+        return tx.qATraining.create({
+          data: {
+            pitchId,
+            rehearsalId: latestRehearsal.id,
+            noticeId: latestNotice?.id ?? null,
+            irDeckId: latestIrDeck?.id ?? null,
+            voiceAnalysisId: latestRehearsal.id,
+            mode: dto.qa_mode,
+            totalQuestions: questions.length,
+            version: (latestTraining?.version ?? 0) + 1,
+            isLatest: true,
+            questions: {
+              create: questions,
             },
           },
-        },
-      });
-    });
+          include: {
+            questions: {
+              orderBy: {
+                displayOrder: 'asc',
+              },
+            },
+          },
+        });
+      },
+    );
 
     return this.mapQATrainingResponse(
       createdQATraining,

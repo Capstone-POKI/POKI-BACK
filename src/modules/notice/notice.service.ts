@@ -12,6 +12,7 @@ import {
 } from '../../infra/fastapi/fastapi.client';
 import { UpdateNoticeDto } from './dto/update-notice.dto';
 import { assertPdfFile } from '../../common/file-validation';
+import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -126,50 +127,53 @@ export class NoticeService {
       });
     }
 
-    await this.prisma.notice.updateMany({
-      where: { pitchId, isLatest: true },
-      data: { isLatest: false },
-    });
-
-    const latest = await this.prisma.notice.findFirst({
-      where: { pitchId },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (latest?.version ?? 0) + 1;
-
-    const notice = await this.prisma.notice.create({
-      data: {
-        pitchId,
-        noticeName: '',
-        pdfSizeBytes: file.size,
-        pdfUploadStatus: 'PROCESSING',
-        analysisStatus: 'IN_PROGRESS',
-        version: nextVersion,
-        isLatest: true,
-      },
-    });
-
-    await this.prisma.pitch.update({
-      where: { id: pitchId },
-      data: {
-        status: 'NOTICE_ANALYSIS',
-        hasNotice: true,
-        noticeType: 'PDF',
-      },
-    });
-
     const defaults = getDefaultCriteria(pitch.pitchType);
-    await this.prisma.noticeEvaluationCriteria.createMany({
-      data: defaults.map((c, i) => ({
-        noticeId: notice.id,
-        criteriaName: c.name,
-        points: c.points,
-        importance: computeImportance(c.points),
-        displayOrder: i + 1,
-        pitchcoachInterpretation: c.interpretation,
-        irGuide: c.irGuide,
-      })),
+    const notice = await runSerializableTransaction(this.prisma, async (tx) => {
+      await tx.notice.updateMany({
+        where: { pitchId, isLatest: true },
+        data: { isLatest: false },
+      });
+
+      const latest = await tx.notice.findFirst({
+        where: { pitchId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+
+      const createdNotice = await tx.notice.create({
+        data: {
+          pitchId,
+          noticeName: '',
+          pdfSizeBytes: file.size,
+          pdfUploadStatus: 'PROCESSING',
+          analysisStatus: 'IN_PROGRESS',
+          version: (latest?.version ?? 0) + 1,
+          isLatest: true,
+        },
+      });
+
+      await tx.pitch.update({
+        where: { id: pitchId },
+        data: {
+          status: 'NOTICE_ANALYSIS',
+          hasNotice: true,
+          noticeType: 'PDF',
+        },
+      });
+
+      await tx.noticeEvaluationCriteria.createMany({
+        data: defaults.map((c, i) => ({
+          noticeId: createdNotice.id,
+          criteriaName: c.name,
+          points: c.points,
+          importance: computeImportance(c.points),
+          displayOrder: i + 1,
+          pitchcoachInterpretation: c.interpretation,
+          irGuide: c.irGuide,
+        })),
+      });
+
+      return createdNotice;
     });
 
     this.fireAiAnalysis(notice.id, pitchId, file);

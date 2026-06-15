@@ -42,7 +42,9 @@ export class NoticeController {
 
   @Post('pitches/:pitchId/notices/analyze')
   @HttpCode(HttpStatus.ACCEPTED)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   @ApiOperation({ summary: '공고문 PDF 업로드 및 분석 시작' })
   @ApiConsumes('multipart/form-data')
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })

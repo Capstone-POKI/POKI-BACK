@@ -11,8 +11,9 @@ import {
   AiIrSummaryResponse,
   AiIrSlidesResponse,
 } from '../../infra/fastapi/fastapi.client';
+import { assertPdfFile } from '../../common/file-validation';
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const IR_DECK_SYNC_INTERVAL_MS = Number(
   process.env.IR_DECK_SYNC_INTERVAL_MS ?? 5000,
 );
@@ -314,19 +315,11 @@ export class DeckService {
       throw new ForbiddenException({ error: 'FORBIDDEN' });
     }
 
-    if (
-      !file.originalname.toLowerCase().endsWith('.pdf') &&
-      file.mimetype !== 'application/pdf'
-    ) {
-      throw new BadRequestException({
-        error: 'INVALID_FILE',
-        message: 'PDF 파일만 업로드 가능합니다',
-      });
-    }
+    assertPdfFile(file);
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException({
         error: 'FILE_TOO_LARGE',
-        message: '파일 크기는 100MB 이하여야 합니다',
+        message: '파일 크기는 50MB 이하여야 합니다',
       });
     }
 

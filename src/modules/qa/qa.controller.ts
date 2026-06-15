@@ -246,7 +246,9 @@ export class QaController {
   }
 
   @Post('questions/:questionId/answers')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   @ApiOperation({
     summary: '답변 음성 업로드 및 분석',
     description:

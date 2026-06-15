@@ -39,7 +39,9 @@ export class RehearsalController {
 
   @Post('pitches/:pitchId/voice/upload-and-analyze')
   @HttpCode(HttpStatus.ACCEPTED)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: '음성 업로드 및 분석 시작' })
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })

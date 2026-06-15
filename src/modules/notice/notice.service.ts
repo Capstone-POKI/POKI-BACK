@@ -11,6 +11,7 @@ import {
   AiNoticeResultResponse,
 } from '../../infra/fastapi/fastapi.client';
 import { UpdateNoticeDto } from './dto/update-notice.dto';
+import { assertPdfFile } from '../../common/file-validation';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -117,15 +118,7 @@ export class NoticeService {
       throw new ForbiddenException({ error: 'FORBIDDEN' });
     }
 
-    if (
-      !file.originalname.toLowerCase().endsWith('.pdf') &&
-      file.mimetype !== 'application/pdf'
-    ) {
-      throw new BadRequestException({
-        error: 'INVALID_FILE',
-        message: 'PDF 파일만 업로드 가능합니다',
-      });
-    }
+    assertPdfFile(file);
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException({
         error: 'FILE_TOO_LARGE',

@@ -11,6 +11,7 @@ import {
   AiVoiceAnalyzeContext,
   AiVoiceAnalyzeOptions,
 } from '../../infra/fastapi/fastapi.client';
+import { assertAudioFile } from '../../common/file-validation';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (OpenAI Whisper API limit)
 const ALLOWED_MIMETYPES = new Set([
@@ -222,13 +223,8 @@ export class RehearsalService {
       throw new ForbiddenException({ error: 'FORBIDDEN' });
     }
 
+    assertAudioFile(file);
     const ext = '.' + (file.originalname.split('.').pop() ?? '').toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(ext) && !ALLOWED_MIMETYPES.has(file.mimetype)) {
-      throw new BadRequestException({
-        error: 'INVALID_FILE',
-        message: '지원하지 않는 음성 파일 형식입니다',
-      });
-    }
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException({
         error: 'FILE_TOO_LARGE',

@@ -14,13 +14,14 @@ import { QAModeEnum, SetQAModeDto } from './dto/set-qa-mode.dto';
 import { SetQAModeResponseDto } from './dto/set-qa-mode.response.dto';
 import { SubmitAnswerResponseDto } from './dto/submit-answer.response.dto';
 import * as path from 'path';
+import { assertAudioFile } from '../../common/file-validation';
 
 const QA_ALLOWED_EXTENSIONS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
 const QA_ALLOWED_MIMETYPES = new Set([
   'audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/m4a',
   'audio/wav', 'audio/ogg', 'video/webm',
 ]);
-const QA_MAX_FILE_SIZE = 50 * 1024 * 1024;
+const QA_MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 type QAQuestionDraft = {
   category: string;
@@ -320,6 +321,8 @@ export class QaService {
         message: '지원하지 않는 음성 파일 형식입니다.',
       });
     }
+
+    assertAudioFile(file as Express.Multer.File);
 
     const ext = path.extname(file.originalname).toLowerCase();
     if (!QA_ALLOWED_EXTENSIONS.has(ext) && !QA_ALLOWED_MIMETYPES.has(file.mimetype)) {

@@ -50,7 +50,7 @@ NestJS + Prisma 기반 백엔드입니다.
 
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/poki?schema=public"
-JWT_SECRET="change-me"
+JWT_SECRET="replace-with-a-long-random-secret"
 AI_SERVER_URL="http://localhost:8000"
 PORT=3000
 CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000,http://localhost:5500,http://127.0.0.1:5500,https://pitchcoach.duckdns.org"

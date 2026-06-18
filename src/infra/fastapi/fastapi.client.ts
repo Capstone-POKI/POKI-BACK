@@ -257,8 +257,15 @@ export interface AiReportGenerateParams {
 @Injectable()
 export class FastApiClient {
   private readonly logger = new Logger(FastApiClient.name);
-  private readonly baseUrl = process.env.AI_SERVER_URL;
+  private readonly baseUrl: string;
   private readonly internalApiKey = process.env.AI_INTERNAL_API_KEY;
+
+  constructor() {
+    if (!process.env.AI_SERVER_URL) {
+      throw new Error('AI_SERVER_URL environment variable is required');
+    }
+    this.baseUrl = process.env.AI_SERVER_URL;
+  }
 
   private getRequestHeaders(extraHeaders: Record<string, string> = {}) {
     if (!this.internalApiKey) {

@@ -1,3 +1,4 @@
+import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
@@ -19,6 +20,7 @@ function getAllowedOrigins() {
     'http://localhost:5500',
     'http://127.0.0.1:5500',
     'https://pitchcoach.duckdns.org',
+    'https://pitchcoach-fe.vercel.app',
   ];
 
   const configured = (process.env.CORS_ORIGINS ?? '')
@@ -31,6 +33,8 @@ function getAllowedOrigins() {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(helmet());
 
   app.enableCors({
     origin: getAllowedOrigins(),

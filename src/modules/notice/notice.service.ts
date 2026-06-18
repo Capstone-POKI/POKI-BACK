@@ -182,6 +182,7 @@ function getDefaultCriteria(pitchType: string) {
 @Injectable()
 export class NoticeService {
   private readonly logger = new Logger(NoticeService.name);
+  private readonly activeNoticeSyncers = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -497,50 +498,65 @@ export class NoticeService {
     pdfUrl: string | null;
   }): Promise<boolean> {
     if (!notice.pdfUrl?.startsWith('ai://')) return false;
+    if (this.activeNoticeSyncers.has(notice.id)) return false;
+    this.activeNoticeSyncers.add(notice.id);
+    try {
+      return await this.doSyncFromAi(notice);
+    } finally {
+      this.activeNoticeSyncers.delete(notice.id);
+    }
+  }
 
-    const aiId = notice.pdfUrl.replace('ai://', '');
+  private async doSyncFromAi(notice: {
+    id: string;
+    pitchId: string;
+    pdfUrl: string | null;
+  }): Promise<boolean> {
+    const aiId = notice.pdfUrl!.replace('ai://', '');
 
     try {
       const r: AiNoticeResultResponse =
         await this.fastApiClient.getNoticeResult(aiId);
 
       if (r.analysis_status === 'COMPLETED') {
-        await this.prisma.notice.update({
-          where: { id: notice.id },
-          data: {
-            noticeName: r.notice_name ?? '',
-            hostOrganization: r.host_organization ?? null,
-            recruitmentType: r.recruitment_type ?? null,
-            targetAudience: r.target_audience ?? null,
-            applicationPeriod: r.application_period ?? null,
-            additionalCriteria: r.additional_criteria ?? null,
-            irDeckGuide: r.ir_deck_guide ?? null,
-            analysisStatus: 'COMPLETED',
-            pdfUploadStatus: 'COMPLETED',
-            errorMessage: null,
-          },
-        });
-
-        if (r.evaluation_criteria && r.evaluation_criteria.length > 0) {
-          await this.prisma.noticeEvaluationCriteria.deleteMany({
-            where: { noticeId: notice.id },
+        await this.prisma.$transaction(async (tx) => {
+          await tx.notice.update({
+            where: { id: notice.id },
+            data: {
+              noticeName: r.notice_name ?? '',
+              hostOrganization: r.host_organization ?? null,
+              recruitmentType: r.recruitment_type ?? null,
+              targetAudience: r.target_audience ?? null,
+              applicationPeriod: r.application_period ?? null,
+              additionalCriteria: r.additional_criteria ?? null,
+              irDeckGuide: r.ir_deck_guide ?? null,
+              analysisStatus: 'COMPLETED',
+              pdfUploadStatus: 'COMPLETED',
+              errorMessage: null,
+            },
           });
-          await this.prisma.noticeEvaluationCriteria.createMany({
-            data: r.evaluation_criteria.map((c, i) => ({
-              noticeId: notice.id,
-              criteriaName: c.criteria_name,
-              points: c.points,
-              importance: computeImportance(c.points),
-              displayOrder: i + 1,
-              pitchcoachInterpretation: c.pitchcoach_interpretation,
-              irGuide: c.ir_guide,
-            })),
-          });
-        }
 
-        await this.prisma.pitch.update({
-          where: { id: notice.pitchId },
-          data: { status: 'IRDECK_ANALYSIS' },
+          if (r.evaluation_criteria && r.evaluation_criteria.length > 0) {
+            await tx.noticeEvaluationCriteria.deleteMany({
+              where: { noticeId: notice.id },
+            });
+            await tx.noticeEvaluationCriteria.createMany({
+              data: r.evaluation_criteria.map((c, i) => ({
+                noticeId: notice.id,
+                criteriaName: c.criteria_name,
+                points: c.points,
+                importance: computeImportance(c.points),
+                displayOrder: i + 1,
+                pitchcoachInterpretation: c.pitchcoach_interpretation,
+                irGuide: c.ir_guide,
+              })),
+            });
+          }
+
+          await tx.pitch.update({
+            where: { id: notice.pitchId },
+            data: { status: 'IRDECK_ANALYSIS' },
+          });
         });
 
         return true;

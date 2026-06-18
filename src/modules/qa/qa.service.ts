@@ -335,8 +335,8 @@ export class QaService {
 
     if (file.size > QA_MAX_FILE_SIZE) {
       throw new BadRequestException({
-        error: 'INVALID_AUDIO_FILE',
-        message: '지원하지 않는 음성 파일 형식입니다.',
+        error: 'FILE_TOO_LARGE',
+        message: '파일 크기는 25MB 이하여야 합니다.',
       });
     }
 
@@ -662,13 +662,6 @@ export class QaService {
             },
           });
         }
-
-        await tx.qATraining.update({
-          where: { id: latestQATraining.id },
-          data: {
-            mode: latestQATraining.mode,
-          },
-        });
       });
     }
 

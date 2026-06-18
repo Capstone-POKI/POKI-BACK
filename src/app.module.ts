@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './infra/prisma/prisma.module';
 import { UserModule } from './modules/user/user.module';
 import { AiModule } from './modules/ai/ai.module';
@@ -17,6 +19,10 @@ import { ReportModule } from './modules/report/report.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60_000, limit: 120 },
+      { name: 'auth', ttl: 60_000, limit: 10 },
+    ]),
     PrismaModule,
     UserModule,
     AiModule,
@@ -28,6 +34,9 @@ import { ReportModule } from './modules/report/report.module';
     RehearsalModule,
     QaModule,
     ReportModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

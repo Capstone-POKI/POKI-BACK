@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   Injectable,
   BadRequestException,
@@ -24,8 +25,9 @@ const IR_DECK_ANALYSIS_TIMEOUT_MS =
 function safeJsonArray(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
   } catch {
     return [];
   }
@@ -76,6 +78,7 @@ type CanonicalIrAxis =
 export class DeckService {
   private readonly logger = new Logger(DeckService.name);
   private readonly activeDeckPollers = new Set<string>();
+  private readonly activeDeckSyncers = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -810,8 +813,22 @@ export class DeckService {
     noticeId: string | null;
   }): Promise<boolean> {
     if (!irDeck.pdfUrl?.startsWith('ai://')) return false;
+    if (this.activeDeckSyncers.has(irDeck.id)) return false;
+    this.activeDeckSyncers.add(irDeck.id);
+    try {
+      return await this.doSyncFromAi(irDeck);
+    } finally {
+      this.activeDeckSyncers.delete(irDeck.id);
+    }
+  }
 
-    const aiId = irDeck.pdfUrl.replace('ai://', '');
+  private async doSyncFromAi(irDeck: {
+    id: string;
+    pitchId: string;
+    pdfUrl: string | null;
+    noticeId: string | null;
+  }): Promise<boolean> {
+    const aiId = irDeck.pdfUrl!.replace('ai://', '');
 
     try {
       const summary: AiIrSummaryResponse =
@@ -820,7 +837,14 @@ export class DeckService {
       if (summary.analysis_status === 'COMPLETED') {
         if (!summary.deck_score) {
           this.logger.warn(`IR Deck COMPLETED but deck_score missing: ${aiId}`);
-          return false;
+          await this.prisma.iRDeck.update({
+            where: { id: irDeck.id },
+            data: {
+              analysisStatus: 'FAILED',
+              errorMessage: 'AI 분석 완료 후 점수 데이터가 누락되었습니다.',
+            },
+          });
+          return true;
         }
 
         let slidesRes: AiIrSlidesResponse | null = null;
@@ -950,25 +974,31 @@ export class DeckService {
           await tx.slide.deleteMany({ where: { irDeckId: irDeck.id } });
 
           const slides = slidesRes?.slides ?? [];
-          for (const s of slides) {
-            const slide = await tx.slide.create({
-              data: {
+          if (slides.length > 0) {
+            const slidesWithIds = slides.map((s) => ({
+              ...s,
+              id: randomUUID(),
+            }));
+
+            await tx.slide.createMany({
+              data: slidesWithIds.map((s) => ({
+                id: s.id,
                 irDeckId: irDeck.id,
                 slideNumber: s.slide_number,
                 category: s.category,
                 thumbnailUrl: s.thumbnail_url ?? null,
                 contentSummary: s.content_summary,
                 score: s.score,
-              },
+              })),
             });
 
-            await tx.slideFeedback.create({
-              data: {
-                slideId: slide.id,
+            await tx.slideFeedback.createMany({
+              data: slidesWithIds.map((s) => ({
+                slideId: s.id,
                 detailedFeedback: s.detailed_feedback,
                 strengths: JSON.stringify(s.strengths),
                 improvements: JSON.stringify(s.improvements),
-              },
+              })),
             });
           }
 

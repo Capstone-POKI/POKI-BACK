@@ -24,8 +24,9 @@ function stringValue(value: unknown): string {
 function safeJsonArray(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
   } catch {
     return [];
   }
@@ -938,14 +939,14 @@ export class RehearsalService {
         });
       }
 
-      for (const s of slides) {
-        const slideNum = Number(s.slide_number ?? 0);
-        if (!Number.isInteger(slideNum) || slideNum <= 0) continue;
-        const durationSec = Math.round(Number(s.duration_seconds ?? 0));
-        const startTs = Number(s.start_timestamp ?? 0);
-        const endTs = Number(s.end_timestamp ?? 0);
-        await tx.rehearsalSlideAnalysis.create({
-          data: {
+      const slideAnalysisData = slides
+        .map((s) => {
+          const slideNum = Number(s.slide_number ?? 0);
+          if (!Number.isInteger(slideNum) || slideNum <= 0) return null;
+          const durationSec = Math.round(Number(s.duration_seconds ?? 0));
+          const startTs = Number(s.start_timestamp ?? 0);
+          const endTs = Number(s.end_timestamp ?? 0);
+          return {
             rehearsalId,
             slideId: slideIdMap.get(slideNum) ?? null,
             slideNumber: slideNum,
@@ -959,8 +960,12 @@ export class RehearsalService {
             detailedFeedback: stringValue(s.detailed_feedback),
             strengths: JSON.stringify(s.strengths ?? []),
             improvements: JSON.stringify(s.improvements ?? []),
-          },
-        });
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (slideAnalysisData.length > 0) {
+        await tx.rehearsalSlideAnalysis.createMany({ data: slideAnalysisData });
       }
 
       // 5. Pitch 상태 갱신

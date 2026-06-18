@@ -207,6 +207,11 @@ export interface AiQaAnswerResult {
   weaknesses: string | null;
 }
 
+interface AiQaAnswerAnalyzeResponse {
+  question_id?: string;
+  answer?: AiQaAnswerResult;
+}
+
 // ── AI Report 타입 ──
 
 export interface AiReportRadarChart {
@@ -493,7 +498,8 @@ export class FastApiClient {
       form,
       { headers: this.getRequestHeaders(form.getHeaders()) },
     );
-    return res.data as AiQaAnswerResult;
+    const data = res.data as AiQaAnswerResult | AiQaAnswerAnalyzeResponse;
+    return 'answer' in data && data.answer ? data.answer : (data as AiQaAnswerResult);
   }
 
   async generateAiReport(

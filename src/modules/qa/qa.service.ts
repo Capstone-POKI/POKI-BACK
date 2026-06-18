@@ -490,24 +490,7 @@ export class QaService {
       .join('\n');
 
     return [
-      irDeck.totalScore != null ? `IR Deck 총점: ${irDeck.totalScore}` : null,
-      irDeck.deckScore?.structureSummary
-        ? `구조 요약: ${irDeck.deckScore.structureSummary}`
-        : null,
-      irDeck.deckScore?.strengths
-        ? `강점: ${safeJsonArray(irDeck.deckScore.strengths).join(', ')}`
-        : null,
-      irDeck.deckScore?.improvements
-        ? `개선점: ${safeJsonArray(irDeck.deckScore.improvements).join(', ')}`
-        : null,
-      irDeck.presentationGuide
-        ? `발표 가이드: ${irDeck.presentationGuide}`
-        : null,
-      irDeck.emphasizedSlides
-        ? `중요 슬라이드: ${irDeck.emphasizedSlides}`
-        : null,
-      irDeck.improvedItems ? `보완 항목: ${irDeck.improvedItems}` : null,
-      slideSummary ? `슬라이드 요약:\n${slideSummary}` : null,
+      slideSummary ? `슬라이드 내용:\n${slideSummary}` : null,
     ]
       .filter((line): line is string => Boolean(line))
       .join('\n');
@@ -527,18 +510,8 @@ export class QaService {
     }
 
     return [
-      rehearsal.structureSummary
-        ? `발표 구조 요약: ${rehearsal.structureSummary}`
-        : null,
-      rehearsal.overallStrengths
-        ? `발표 강점: ${rehearsal.overallStrengths}`
-        : null,
-      rehearsal.overallImprovements
-        ? `발표 개선점: ${rehearsal.overallImprovements}`
-        : null,
-      rehearsal.improvedItems ? `개선 항목: ${rehearsal.improvedItems}` : null,
       rehearsal.transcription
-        ? `발표 전사:\n${shortenText(rehearsal.transcription, 4000)}`
+        ? `발표 전사:\n${shortenText(rehearsal.transcription, 3000)}`
         : null,
     ]
       .filter((line): line is string => Boolean(line))

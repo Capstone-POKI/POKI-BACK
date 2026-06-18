@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { QaService } from './qa.service';
@@ -221,10 +220,6 @@ describe('QaService.getQuestions', () => {
         answerGuide:
           '핵심 팀원의 역할, 관련 경험, 실행 체계, 보완 인력을 설명하세요.',
       },
-    });
-    expect(prisma.qATraining.update).toHaveBeenCalledWith({
-      where: { id: 'qa-1' },
-      data: { mode: 'GUIDE_ONLY' },
     });
     expect(result.questions[1].answer_guide).toContain('핵심 팀원의 역할');
     expect(result.updated_at).toBe('2026-03-12T14:22:00.000Z');

@@ -71,7 +71,11 @@ export class PitchController {
     description:
       '응답 status는 COMPLETED 외의 내부 진행 상태(SETUP, NOTICE_ANALYSIS, IRDECK_ANALYSIS, REHEARSAL)를 모두 IN_PROGRESS로 매핑합니다.',
   })
-  @ApiQuery({ name: 'status', required: false, enum: ['IN_PROGRESS', 'COMPLETED'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['IN_PROGRESS', 'COMPLETED'],
+  })
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
@@ -102,10 +106,7 @@ export class PitchController {
     status: 401,
     description: 'UNAUTHORIZED',
   })
-  list(
-    @Query() query: ListPitchesDto,
-    @Req() req: AuthenticatedRequest,
-  ) {
+  list(@Query() query: ListPitchesDto, @Req() req: AuthenticatedRequest) {
     return this.pitchService.findAll(req.user.id, query);
   }
 
@@ -162,10 +163,7 @@ export class PitchController {
     status: 404,
     schema: { example: { error: 'PITCH_NOT_FOUND' } },
   })
-  remove(
-    @Param('pitchId') pitchId: string,
-    @Req() req: AuthenticatedRequest,
-  ) {
+  remove(@Param('pitchId') pitchId: string, @Req() req: AuthenticatedRequest) {
     return this.pitchService.softDelete(req.user.id, pitchId);
   }
 }

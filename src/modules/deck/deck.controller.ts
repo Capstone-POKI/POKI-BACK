@@ -42,7 +42,9 @@ export class DeckController {
 
   @Post('pitches/:pitchId/ir-decks/analyze')
   @HttpCode(HttpStatus.ACCEPTED)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }),
+  )
   @ApiOperation({ summary: 'IR Deck PDF 업로드 및 분석 시작' })
   @ApiConsumes('multipart/form-data')
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })
@@ -53,7 +55,7 @@ export class DeckController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'PDF 파일 (최대 100MB)',
+          description: 'PDF 파일 (최대 50MB)',
         },
       },
       required: ['file'],

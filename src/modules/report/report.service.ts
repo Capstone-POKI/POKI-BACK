@@ -6,7 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
-import { FastApiClient, AiReportResult } from '../../infra/fastapi/fastapi.client';
+import {
+  FastApiClient,
+  AiReportResult,
+} from '../../infra/fastapi/fastapi.client';
 import { GetReportResponseDto } from './dto/get-report.response.dto';
 import { CreateReportResponseDto } from './dto/create-report.response.dto';
 
@@ -117,6 +120,9 @@ function parseStringArray(value: string | null | undefined): string[] {
 type ReportRow = {
   id: string;
   pitchId: string;
+  noticeId: string | null;
+  irDeckId: string | null;
+  rehearsalId: string | null;
   noticeSummary: string | null;
   noticeScore: number | null;
   irDeckSummary: string | null;
@@ -145,12 +151,18 @@ export class ReportService {
     private readonly fastApiClient: FastApiClient,
   ) {}
 
-  async getOne(userId: string, reportId: string): Promise<GetReportResponseDto> {
-    const report = await this.prisma.report.findUnique({
+  async getOne(
+    userId: string,
+    reportId: string,
+  ): Promise<GetReportResponseDto> {
+    const report = (await this.prisma.report.findUnique({
       where: { id: reportId },
       select: {
         id: true,
         pitchId: true,
+        noticeId: true,
+        irDeckId: true,
+        rehearsalId: true,
         noticeSummary: true,
         noticeScore: true,
         irDeckSummary: true,
@@ -171,7 +183,7 @@ export class ReportService {
           },
         },
       },
-    }) as ReportRow | null;
+    })) as ReportRow | null;
 
     if (!report || report.pitch.isDeleted) {
       throw new NotFoundException({
@@ -191,6 +203,10 @@ export class ReportService {
 
     return {
       report_id: report.id,
+      pitch_id: report.pitchId,
+      notice_id: report.noticeId ?? null,
+      ir_deck_id: report.irDeckId ?? null,
+      voice_analysis_id: report.rehearsalId ?? null,
       notice: {
         summary: report.noticeSummary ?? '',
         score: report.noticeScore ?? 0,
@@ -214,7 +230,10 @@ export class ReportService {
     };
   }
 
-  async create(userId: string, pitchId: string): Promise<CreateReportResponseDto> {
+  async create(
+    userId: string,
+    pitchId: string,
+  ): Promise<CreateReportResponseDto> {
     const pitch = await this.prisma.pitch.findUnique({
       where: { id: pitchId },
       select: { id: true, userId: true, isDeleted: true },
@@ -241,7 +260,7 @@ export class ReportService {
       this.findLatestCompletedQaTraining(pitchId),
     ]);
 
-    if (!notice || !irDeck || !rehearsal || !qaTraining) {
+    if (!notice || !irDeck || !rehearsal) {
       throw new ConflictException({
         error: 'INSUFFICIENT_ANALYSIS_DATA',
         message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
@@ -251,14 +270,20 @@ export class ReportService {
     const noticeScore = this.calculateNoticeScore(notice);
     const irDeckScore = this.calculateIrDeckScore(irDeck);
     const voiceScore = this.calculateVoiceScore(rehearsal);
-    const qaScore = this.calculateQaScore(qaTraining);
-    const finalScore = clampScore(average([noticeScore, irDeckScore, voiceScore, qaScore]));
+    const qaScore = qaTraining ? this.calculateQaScore(qaTraining) : 0;
+    const scoreInputs = [noticeScore, irDeckScore, voiceScore];
+    if (this.hasEvaluatedQaTraining(qaTraining)) {
+      scoreInputs.push(qaScore);
+    }
+    const finalScore = clampScore(average(scoreInputs));
     const generatedAt = new Date();
 
     const noticeSummary = this.buildNoticeSummary(notice, noticeScore);
     const irDeckSummary = this.buildIrDeckSummary(irDeck, irDeckScore);
     const voiceSummary = this.buildVoiceSummary(rehearsal, voiceScore);
-    const qaSummary = this.buildQaSummary(qaTraining, qaScore);
+    const qaSummary = qaTraining
+      ? this.buildQaSummary(qaTraining, qaScore)
+      : this.buildSkippedQaSummary();
 
     // AI 서버 호출로 상세 리포트 생성 시도
     let chartData: string;
@@ -276,11 +301,21 @@ export class ReportService {
       });
       // AI 결과를 chartData 필드에 저장 (ai_report 키로 래핑)
       chartData = JSON.stringify({ ai_report: aiReport });
-      this.logger.log(`AI 리포트 생성 성공 (pitchId=${pitchId}, final_score=${aiReport.final_score})`);
+      this.logger.log(
+        `AI 리포트 생성 성공 (pitchId=${pitchId}, final_score=${aiReport.final_score})`,
+      );
     } catch (err) {
-      this.logger.warn(`AI 리포트 생성 실패, rule-based 폴백 사용 (pitchId=${pitchId}): ${String(err)}`);
+      this.logger.warn(
+        `AI 리포트 생성 실패, rule-based 폴백 사용 (pitchId=${pitchId}): ${String(err)}`,
+      );
       chartData = JSON.stringify(
-        this.buildChartData(noticeScore, irDeckScore, voiceScore, qaScore, finalScore),
+        this.buildChartData(
+          noticeScore,
+          irDeckScore,
+          voiceScore,
+          qaScore,
+          finalScore,
+        ),
       );
     }
 
@@ -327,7 +362,7 @@ export class ReportService {
       notice_id: report.noticeId,
       ir_deck_id: report.irDeckId,
       voice_analysis_id: report.rehearsalId,
-      qa_training_id: qaTraining.id,
+      qa_training_id: qaTraining?.id ?? null,
       notice_score: noticeScore,
       ir_deck_score: irDeckScore,
       voice_score: voiceScore,
@@ -357,7 +392,10 @@ export class ReportService {
 
   private parseChartData(
     value: string | null,
-    report: Pick<ReportRow, 'noticeScore' | 'irDeckScore' | 'voiceScore' | 'qaScore'>,
+    report: Pick<
+      ReportRow,
+      'noticeScore' | 'irDeckScore' | 'voiceScore' | 'qaScore'
+    >,
   ): { labels: string[]; scores: number[] } {
     if (value) {
       try {
@@ -369,8 +407,12 @@ export class ReportService {
           Array.isArray((parsed as { scores?: unknown }).scores)
         ) {
           return {
-            labels: (parsed as { labels: unknown[] }).labels.map((label) => String(label)),
-            scores: (parsed as { scores: unknown[] }).scores.map((score) => Number(score)),
+            labels: (parsed as { labels: unknown[] }).labels.map((label) =>
+              String(label),
+            ),
+            scores: (parsed as { scores: unknown[] }).scores.map((score) =>
+              Number(score),
+            ),
           };
         }
       } catch {
@@ -389,7 +431,9 @@ export class ReportService {
     };
   }
 
-  private async findLatestCompletedNotice(pitchId: string): Promise<NoticeRow | null> {
+  private async findLatestCompletedNotice(
+    pitchId: string,
+  ): Promise<NoticeRow | null> {
     return this.prisma.notice.findFirst({
       where: { pitchId, isLatest: true, analysisStatus: 'COMPLETED' },
       orderBy: { version: 'desc' },
@@ -419,7 +463,9 @@ export class ReportService {
     });
   }
 
-  private async findLatestCompletedIrDeck(pitchId: string): Promise<IrDeckRow | null> {
+  private async findLatestCompletedIrDeck(
+    pitchId: string,
+  ): Promise<IrDeckRow | null> {
     return this.prisma.iRDeck.findFirst({
       where: { pitchId, isLatest: true, analysisStatus: 'COMPLETED' },
       orderBy: { version: 'desc' },
@@ -445,7 +491,9 @@ export class ReportService {
     });
   }
 
-  private async findLatestCompletedRehearsal(pitchId: string): Promise<RehearsalRow | null> {
+  private async findLatestCompletedRehearsal(
+    pitchId: string,
+  ): Promise<RehearsalRow | null> {
     return this.prisma.rehearsal.findFirst({
       where: { pitchId, isLatest: true, analysisStatus: 'COMPLETED' },
       orderBy: { rehearsalNumber: 'desc' },
@@ -464,7 +512,9 @@ export class ReportService {
     });
   }
 
-  private async findLatestCompletedQaTraining(pitchId: string): Promise<QaTrainingRow | null> {
+  private async findLatestCompletedQaTraining(
+    pitchId: string,
+  ): Promise<QaTrainingRow | null> {
     return this.prisma.qATraining.findFirst({
       where: { pitchId, isLatest: true },
       orderBy: { version: 'desc' },
@@ -513,7 +563,8 @@ export class ReportService {
 
     const missingGuidanceCount = notice.evaluationCriteria.filter(
       (criteria) =>
-        !compactText(criteria.pitchcoachInterpretation) || !compactText(criteria.irGuide),
+        !compactText(criteria.pitchcoachInterpretation) ||
+        !compactText(criteria.irGuide),
     ).length;
     score -= Math.min(8, missingGuidanceCount * 2);
 
@@ -529,7 +580,8 @@ export class ReportService {
       return clampScore(irDeck.deckScore.totalScore);
     }
 
-    const criteriaScores = irDeck.deckScore?.criteriaScores.map((item) => item.score) ?? [];
+    const criteriaScores =
+      irDeck.deckScore?.criteriaScores.map((item) => item.score) ?? [];
     if (criteriaScores.length > 0) {
       return clampScore(average(criteriaScores));
     }
@@ -561,32 +613,45 @@ export class ReportService {
       return clampScore(training.totalScore);
     }
 
-    const answeredQuestions = training.questions.filter((question) => Boolean(question.answer));
-    if (answeredQuestions.length !== training.questions.length || answeredQuestions.length === 0) {
-      throw new ConflictException({
-        error: 'INSUFFICIENT_ANALYSIS_DATA',
-        message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
-      });
+    const answeredQuestions = training.questions.filter((question) =>
+      Boolean(question.answer),
+    );
+    if (answeredQuestions.length === 0) {
+      return 0;
     }
 
-    const answerScores = answeredQuestions.map((question) => {
-      const scores = [
-        question.answer?.briefnessScore,
-        question.answer?.evidenceScore,
-        question.answer?.structureScore,
-      ].filter((score): score is number => score != null);
+    const answerScores = answeredQuestions
+      .map((question) => {
+        const scores = [
+          question.answer?.briefnessScore,
+          question.answer?.evidenceScore,
+          question.answer?.structureScore,
+        ].filter((score): score is number => score != null);
 
-      if (scores.length === 0) {
-        throw new ConflictException({
-          error: 'INSUFFICIENT_ANALYSIS_DATA',
-          message: '리포트 생성을 위한 분석 데이터가 충분하지 않습니다.',
-        });
-      }
+        return scores.length > 0 ? average(scores) : null;
+      })
+      .filter((score): score is number => score != null);
 
-      return average(scores);
-    });
+    if (answerScores.length === 0) {
+      return 0;
+    }
 
     return clampScore(average(answerScores));
+  }
+
+  private hasEvaluatedQaTraining(training: QaTrainingRow | null): boolean {
+    if (!training) return false;
+    if (training.totalScore != null) return true;
+
+    return training.questions.some((question) => {
+      const answer = question.answer;
+      return Boolean(
+        answer &&
+        (answer.briefnessScore != null ||
+          answer.evidenceScore != null ||
+          answer.structureScore != null),
+      );
+    });
   }
 
   private buildNoticeSummary(notice: NoticeRow, score: number): string {
@@ -595,22 +660,36 @@ export class ReportService {
       notice.hostOrganization ? `주관기관: ${notice.hostOrganization}` : null,
       notice.applicationPeriod ? `신청기간: ${notice.applicationPeriod}` : null,
       notice.summary ? `요약: ${notice.summary}` : null,
-      notice.coreRequirements ? `핵심요구사항: ${notice.coreRequirements}` : null,
-      notice.additionalCriteria ? `추가조건: ${notice.additionalCriteria}` : null,
+      notice.coreRequirements
+        ? `핵심요구사항: ${notice.coreRequirements}`
+        : null,
+      notice.additionalCriteria
+        ? `추가조건: ${notice.additionalCriteria}`
+        : null,
     ].filter((line): line is string => Boolean(line));
 
     return [`공고문 분석 점수 ${score}점`, ...sections].join(' | ');
   }
 
   private buildIrDeckSummary(irDeck: IrDeckRow, score: number): string {
-    const strengths = irDeck.deckScore?.strengths ? parseStringArray(irDeck.deckScore.strengths) : [];
-    const improvements = irDeck.deckScore?.improvements ? parseStringArray(irDeck.deckScore.improvements) : [];
+    const strengths = irDeck.deckScore?.strengths
+      ? parseStringArray(irDeck.deckScore.strengths)
+      : [];
+    const improvements = irDeck.deckScore?.improvements
+      ? parseStringArray(irDeck.deckScore.improvements)
+      : [];
 
     return [
       `IR Deck 분석 점수 ${score}점`,
-      irDeck.deckScore?.structureSummary ? `구조 요약: ${irDeck.deckScore.structureSummary}` : null,
-      irDeck.presentationGuide ? `발표 가이드: ${irDeck.presentationGuide}` : null,
-      irDeck.emphasizedSlides ? `강조 슬라이드: ${irDeck.emphasizedSlides}` : null,
+      irDeck.deckScore?.structureSummary
+        ? `구조 요약: ${irDeck.deckScore.structureSummary}`
+        : null,
+      irDeck.presentationGuide
+        ? `발표 가이드: ${irDeck.presentationGuide}`
+        : null,
+      irDeck.emphasizedSlides
+        ? `강조 슬라이드: ${irDeck.emphasizedSlides}`
+        : null,
       irDeck.improvedItems ? `보완 항목: ${irDeck.improvedItems}` : null,
       strengths.length > 0 ? `강점: ${strengths.join(', ')}` : null,
       improvements.length > 0 ? `개선점: ${improvements.join(', ')}` : null,
@@ -625,7 +704,9 @@ export class ReportService {
 
     return [
       `음성 분석 점수 ${score}점`,
-      rehearsal.structureSummary ? `구조 요약: ${rehearsal.structureSummary}` : null,
+      rehearsal.structureSummary
+        ? `구조 요약: ${rehearsal.structureSummary}`
+        : null,
       rehearsal.improvedItems ? `개선 항목: ${rehearsal.improvedItems}` : null,
       strengths.length > 0 ? `강점: ${strengths.join(', ')}` : null,
       improvements.length > 0 ? `개선점: ${improvements.join(', ')}` : null,
@@ -635,13 +716,21 @@ export class ReportService {
   }
 
   private buildQaSummary(training: QaTrainingRow, score: number): string {
-    const answeredQuestions = training.questions.filter((question) => Boolean(question.answer));
+    const answeredQuestions = training.questions.filter((question) =>
+      Boolean(question.answer),
+    );
     const totalQuestions = training.questions.length;
     const strengths = answeredQuestions
-      .map((question) => parseStringArray(question.answer?.strengths).slice(0, 1)[0])
+      .map(
+        (question) =>
+          parseStringArray(question.answer?.strengths).slice(0, 1)[0],
+      )
       .filter((value): value is string => Boolean(value));
     const weaknesses = answeredQuestions
-      .map((question) => parseStringArray(question.answer?.weaknesses).slice(0, 1)[0])
+      .map(
+        (question) =>
+          parseStringArray(question.answer?.weaknesses).slice(0, 1)[0],
+      )
       .filter((value): value is string => Boolean(value));
 
     return [
@@ -653,6 +742,10 @@ export class ReportService {
     ]
       .filter((line): line is string => Boolean(line))
       .join(' | ');
+  }
+
+  private buildSkippedQaSummary(): string {
+    return ['Q&A 훈련 점수 0점', '응답 완료: 0/0'].join(' | ');
   }
 
   private buildChartData(

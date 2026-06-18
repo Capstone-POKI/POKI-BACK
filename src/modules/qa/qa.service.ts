@@ -577,11 +577,11 @@ export class QaService {
         if (aiQuestions.length > 0) {
           return aiQuestions
             .map((question, index) => {
-              const content = compactText(question.content);
+              const content = compactText(question.question);
               if (!content) return null;
 
-              const category = this.normalizeAiQuestionType(question.type);
-              const guidance = compactText(question.guidance);
+              const category = this.normalizeAiQuestionType(question.category);
+              const guidance = compactText(question.answer_guide);
 
               return {
                 category,

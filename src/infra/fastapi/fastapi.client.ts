@@ -186,15 +186,18 @@ export interface AiQaGenerateResponse {
 
 export interface AiQaQuestionItem {
   question_id: string;
-  order: number;
-  type: string;
-  content: string;
-  guidance?: string | null;
+  display_order: number;
+  category: string;
+  question: string;
+  answer_guide?: string | null;
+  has_answer?: boolean;
 }
 
 export interface AiQaQuestionsResponse {
+  pitch_id?: string;
+  qa_training?: Record<string, unknown> | null;
   questions?: AiQaQuestionItem[];
-  total?: number;
+  updated_at?: string;
 }
 
 export interface AiQaAnswerResult {

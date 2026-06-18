@@ -490,6 +490,15 @@ export class QaService {
       .join('\n');
 
     return [
+      irDeck.deckScore?.structureSummary
+        ? `구조 요약: ${irDeck.deckScore.structureSummary}`
+        : null,
+      irDeck.deckScore?.strengths
+        ? `강점: ${safeJsonArray(irDeck.deckScore.strengths).join(', ')}`
+        : null,
+      irDeck.deckScore?.improvements
+        ? `개선점: ${safeJsonArray(irDeck.deckScore.improvements).join(', ')}`
+        : null,
       slideSummary ? `슬라이드 내용:\n${slideSummary}` : null,
     ]
       .filter((line): line is string => Boolean(line))
@@ -510,6 +519,15 @@ export class QaService {
     }
 
     return [
+      rehearsal.structureSummary
+        ? `발표 구조 요약: ${rehearsal.structureSummary}`
+        : null,
+      rehearsal.overallStrengths
+        ? `발표 강점: ${rehearsal.overallStrengths}`
+        : null,
+      rehearsal.overallImprovements
+        ? `발표 개선점: ${rehearsal.overallImprovements}`
+        : null,
       rehearsal.transcription
         ? `발표 전사:\n${shortenText(rehearsal.transcription, 3000)}`
         : null,

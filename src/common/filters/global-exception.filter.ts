@@ -16,26 +16,28 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
+    let errorCode: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
-      } else if (
-        typeof exceptionResponse === 'object' &&
-        exceptionResponse !== null &&
-        'message' in exceptionResponse
-      ) {
-        message = String(
-          (exceptionResponse as Record<string, unknown>).message,
-        );
+      } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const res = exceptionResponse as Record<string, unknown>;
+        if ('message' in res) {
+          message = String(res.message);
+        }
+        if ('error' in res && typeof res.error === 'string') {
+          errorCode = res.error;
+        }
       }
     }
 
     response.status(status).json({
       success: false,
       statusCode: status,
+      ...(errorCode !== undefined && { error: errorCode }),
       message,
       path: request.url,
       timestamp: new Date().toISOString(),

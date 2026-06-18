@@ -11,25 +11,22 @@ import {
   AiVoiceAnalyzeContext,
   AiVoiceAnalyzeOptions,
 } from '../../infra/fastapi/fastapi.client';
+import { assertAudioFile } from '../../common/file-validation';
+import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB (OpenAI Whisper API limit)
-const ALLOWED_MIMETYPES = new Set([
-  'audio/webm',
-  'audio/mpeg',
-  'audio/mp4',
-  'audio/m4a',
-  'audio/wav',
-  'audio/ogg',
-  'video/webm',
-]);
-const ALLOWED_EXTENSIONS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
 const MAX_REHEARSAL_VERSIONS = 6;
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
 
 function safeJsonArray(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
   } catch {
     return [];
   }
@@ -177,8 +174,7 @@ export class RehearsalService {
           : undefined,
         criteria_scores: (irDeck.deckScore?.criteriaScores ?? []).map((c) => ({
           criteria_name: c.criteriaName,
-          pitchcoach_interpretation:
-            c.pitchcoachInterpretation ?? undefined,
+          pitchcoach_interpretation: c.pitchcoachInterpretation ?? undefined,
           ir_guide: c.irGuide ?? undefined,
           score: c.score,
           feedback: c.feedback ?? undefined,
@@ -222,13 +218,8 @@ export class RehearsalService {
       throw new ForbiddenException({ error: 'FORBIDDEN' });
     }
 
+    assertAudioFile(file);
     const ext = '.' + (file.originalname.split('.').pop() ?? '').toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(ext) && !ALLOWED_MIMETYPES.has(file.mimetype)) {
-      throw new BadRequestException({
-        error: 'INVALID_FILE',
-        message: '지원하지 않는 음성 파일 형식입니다',
-      });
-    }
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException({
         error: 'FILE_TOO_LARGE',
@@ -265,20 +256,6 @@ export class RehearsalService {
       });
     }
 
-    // Mark previous rehearsals as not latest
-    await this.prisma.rehearsal.updateMany({
-      where: { pitchId, isLatest: true },
-      data: { isLatest: false },
-    });
-
-    // Auto-increment rehearsal number
-    const lastRehearsal = await this.prisma.rehearsal.findFirst({
-      where: { pitchId },
-      orderBy: { rehearsalNumber: 'desc' },
-      select: { rehearsalNumber: true },
-    });
-    const rehearsalNumber = (lastRehearsal?.rehearsalNumber ?? 0) + 1;
-
     // Calculate duration if timestamps provided
     let audioDurationSeconds: number | undefined;
     if (slideTimestamps && slideTimestamps.length > 0) {
@@ -286,26 +263,46 @@ export class RehearsalService {
       audioDurationSeconds = Math.round(lastTs.end_timestamp);
     }
 
-    // Create rehearsal record
-    const rehearsal = await this.prisma.rehearsal.create({
-      data: {
-        pitchId,
-        irDeckId: latestDeck.id,
-        rehearsalNumber,
-        isLatest: true,
-        audioFileUrl: 'pending',
-        audioDurationSeconds: audioDurationSeconds ?? null,
-        audioDurationDisplay: audioDurationSeconds ? formatDuration(audioDurationSeconds) : null,
-        audioFormat: ext.replace('.', ''),
-        analysisStatus: 'IN_PROGRESS',
-      },
-    });
+    const rehearsal = await runSerializableTransaction(
+      this.prisma,
+      async (tx) => {
+        await tx.rehearsal.updateMany({
+          where: { pitchId, isLatest: true },
+          data: { isLatest: false },
+        });
 
-    // Update pitch status
-    await this.prisma.pitch.update({
-      where: { id: pitchId },
-      data: { status: 'REHEARSAL' },
-    });
+        const lastRehearsal = await tx.rehearsal.findFirst({
+          where: { pitchId },
+          orderBy: { rehearsalNumber: 'desc' },
+          select: { rehearsalNumber: true },
+        });
+
+        const createdRehearsal = await tx.rehearsal.create({
+          data: {
+            pitchId,
+            irDeckId: latestDeck.id,
+            rehearsalNumber: (lastRehearsal?.rehearsalNumber ?? 0) + 1,
+            isLatest: true,
+            audioFileUrl: 'pending',
+            audioDurationSeconds: audioDurationSeconds ?? null,
+            audioDurationDisplay: audioDurationSeconds
+              ? formatDuration(audioDurationSeconds)
+              : null,
+            audioFormat: ext.replace('.', ''),
+            analysisStatus: 'IN_PROGRESS',
+          },
+        });
+
+        await tx.pitch.update({
+          where: { id: pitchId },
+          data: { status: 'REHEARSAL' },
+        });
+
+        return createdRehearsal;
+      },
+    );
+
+    const rehearsalNumber = rehearsal.rehearsalNumber;
 
     const voiceContext = await this.buildVoiceAnalyzeContext(
       pitchId,
@@ -380,7 +377,8 @@ export class RehearsalService {
         voice_id: rehearsal.id,
         pitch_id: rehearsal.pitchId,
         analysis_status: 'FAILED' as const,
-        error_message: rehearsal.errorMessage ?? '음성 분석 중 오류가 발생했습니다.',
+        error_message:
+          rehearsal.errorMessage ?? '음성 분석 중 오류가 발생했습니다.',
         version: rehearsal.rehearsalNumber,
       };
     }
@@ -398,7 +396,9 @@ export class RehearsalService {
         feedback: d.feedback ?? '',
       }));
 
-    const wpmAnalysis = rehearsal.deliveryAnalyses.find((d) => d.categoryName === 'WPM');
+    const wpmAnalysis = rehearsal.deliveryAnalyses.find(
+      (d) => d.categoryName === 'WPM',
+    );
 
     return {
       voice_id: rehearsal.id,
@@ -451,7 +451,10 @@ export class RehearsalService {
       if (synced) {
         return this.getRehearsalSlides(rehearsalId, userId);
       }
-      return { voice_id: rehearsal.id, analysis_status: 'IN_PROGRESS' as const };
+      return {
+        voice_id: rehearsal.id,
+        analysis_status: 'IN_PROGRESS' as const,
+      };
     }
 
     if (rehearsal.analysisStatus === 'FAILED') {
@@ -600,9 +603,7 @@ export class RehearsalService {
           }
         : null,
       score_diff:
-        previous &&
-        current.totalScore !== null &&
-        previous.totalScore !== null
+        previous && current.totalScore !== null && previous.totalScore !== null
           ? current.totalScore - previous.totalScore
           : null,
       detail_score_comparisons: previous
@@ -662,8 +663,16 @@ export class RehearsalService {
       'audio/ogg': '.ogg',
       'video/mp4': '.mp4',
     };
-    const ALLOWED_AI_EXTS = new Set(['.webm', '.mp3', '.m4a', '.wav', '.ogg', '.mp4']);
-    const originalExt = '.' + (file.originalname.split('.').pop() ?? '').toLowerCase();
+    const ALLOWED_AI_EXTS = new Set([
+      '.webm',
+      '.mp3',
+      '.m4a',
+      '.wav',
+      '.ogg',
+      '.mp4',
+    ]);
+    const originalExt =
+      '.' + (file.originalname.split('.').pop() ?? '').toLowerCase();
     const normalizedFilename = ALLOWED_AI_EXTS.has(originalExt)
       ? file.originalname
       : 'recording' + (MIME_TO_EXT[file.mimetype] ?? '.webm');
@@ -706,15 +715,25 @@ export class RehearsalService {
   private async syncFromAi(rehearsalId: string): Promise<boolean> {
     const rehearsal = await this.prisma.rehearsal.findUnique({
       where: { id: rehearsalId },
-      select: { id: true, pitchId: true, irDeckId: true, audioFileUrl: true, createdAt: true },
+      select: {
+        id: true,
+        pitchId: true,
+        irDeckId: true,
+        audioFileUrl: true,
+        createdAt: true,
+      },
     });
     if (!rehearsal?.audioFileUrl?.startsWith('ai://')) return false;
 
-    const TIMEOUT_MS = Number(process.env.VOICE_ANALYSIS_TIMEOUT_MINUTES ?? 10) * 60 * 1000;
+    const TIMEOUT_MS =
+      Number(process.env.VOICE_ANALYSIS_TIMEOUT_MINUTES ?? 10) * 60 * 1000;
     if (Date.now() - rehearsal.createdAt.getTime() > TIMEOUT_MS) {
       await this.prisma.rehearsal.update({
         where: { id: rehearsalId },
-        data: { analysisStatus: 'FAILED', errorMessage: '음성 분석 시간이 초과되었습니다.' },
+        data: {
+          analysisStatus: 'FAILED',
+          errorMessage: '음성 분석 시간이 초과되었습니다.',
+        },
       });
       return true;
     }
@@ -722,18 +741,24 @@ export class RehearsalService {
     const aiVoiceId = rehearsal.audioFileUrl.replace('ai://', '');
 
     try {
-      const voiceResult = await this.fastApiClient.getVoiceResult(aiVoiceId) as Record<string, unknown>;
-      const status = voiceResult.analysis_status as string;
+      const voiceResult = await this.fastApiClient.getVoiceResult(aiVoiceId);
+      const status = stringValue(voiceResult.analysis_status);
 
       if (status === 'COMPLETED') {
         let slidesResult: Record<string, unknown> | null = null;
         try {
-          slidesResult = await this.fastApiClient.getVoiceSlides(aiVoiceId) as Record<string, unknown>;
+          slidesResult = await this.fastApiClient.getVoiceSlides(aiVoiceId);
         } catch {
           this.logger.warn('AI slides 조회 실패, 전체 결과만 동기화');
         }
 
-        await this.saveCompletedResult(rehearsal.id, rehearsal.pitchId, rehearsal.irDeckId, voiceResult, slidesResult);
+        await this.saveCompletedResult(
+          rehearsal.id,
+          rehearsal.pitchId,
+          rehearsal.irDeckId,
+          voiceResult,
+          slidesResult,
+        );
         return true;
       }
 
@@ -742,7 +767,9 @@ export class RehearsalService {
           where: { id: rehearsalId },
           data: {
             analysisStatus: 'FAILED',
-            errorMessage: (voiceResult.error_message as string) ?? '음성 분석 중 오류가 발생했습니다.',
+            errorMessage:
+              stringValue(voiceResult.error_message) ||
+              '음성 분석 중 오류가 발생했습니다.',
           },
         });
         return true;
@@ -763,25 +790,39 @@ export class RehearsalService {
   ) {
     const wpm = Number(voiceResult.wpm ?? 0);
     const totalScore = Number(voiceResult.total_score ?? 0);
-    const structureSummary = String(voiceResult.structure_summary ?? '');
-    const overallStrengths = voiceResult.overall_strengths as string[] ?? [];
-    const overallImprovements = voiceResult.overall_improvements as string[] ?? [];
-    const audioDurationDisplay = String(voiceResult.audio_duration_display ?? '');
-    const audioDurationSeconds = voiceResult.duration_seconds != null
-      ? Math.round(Number(voiceResult.duration_seconds))
-      : undefined;
-    const detailScores = voiceResult.detail_scores as Array<{ category: string; score: number }> ?? [];
-    const deliveryAnalysis = voiceResult.delivery_analysis as Record<string, unknown> ?? {};
-    const speakingSpeed = deliveryAnalysis.speaking_speed as Record<string, string> ?? {};
-    const deliveryItems = deliveryAnalysis.items as Array<{ category: string; feedback: string }> ?? [];
+    const structureSummary = stringValue(voiceResult.structure_summary);
+    const overallStrengths = (voiceResult.overall_strengths as string[]) ?? [];
+    const overallImprovements =
+      (voiceResult.overall_improvements as string[]) ?? [];
+    const audioDurationDisplay = stringValue(
+      voiceResult.audio_duration_display,
+    );
+    const audioDurationSeconds =
+      voiceResult.duration_seconds != null
+        ? Math.round(Number(voiceResult.duration_seconds))
+        : undefined;
+    const detailScores =
+      (voiceResult.detail_scores as Array<{
+        category: string;
+        score: number;
+      }>) ?? [];
+    const deliveryAnalysis =
+      (voiceResult.delivery_analysis as Record<string, unknown>) ?? {};
+    const speakingSpeed =
+      (deliveryAnalysis.speaking_speed as Record<string, string>) ?? {};
+    const deliveryItems =
+      (deliveryAnalysis.items as Array<{
+        category: string;
+        feedback: string;
+      }>) ?? [];
 
     const DETAIL_CATEGORY_MAP: Record<string, string> = {
       '문제 정의': 'PROBLEM_DEFINITION',
       '솔루션 명확성': 'SOLUTION_CLARITY',
-      '시장성': 'MARKET',
+      시장성: 'MARKET',
       '사업성 BM': 'BUSINESS_MODEL',
       '경쟁력 차별성': 'COMPETITIVE_ADVANTAGE',
-      '전달력': 'DELIVERY',
+      전달력: 'DELIVERY',
       '톤 일관성': 'TONE_CONSISTENCY',
       '시간 적합성': 'TIME_SUITABILITY',
     };
@@ -845,7 +886,9 @@ export class RehearsalService {
           metricLabel: null,
         })),
       ];
-      await tx.rehearsalDeliveryAnalysis.createMany({ data: deliveryData.map((d) => ({ rehearsalId, ...d })) });
+      await tx.rehearsalDeliveryAnalysis.createMany({
+        data: deliveryData.map((d) => ({ rehearsalId, ...d })),
+      });
 
       // 4. RehearsalSlideAnalysis 생성
       await tx.rehearsalSlideAnalysis.deleteMany({ where: { rehearsalId } });
@@ -864,7 +907,9 @@ export class RehearsalService {
           })
         : [];
       const slideIdMap = new Map(deckSlides.map((s) => [s.slideNumber, s.id]));
-      let slides = (slidesResult?.slides as Array<Record<string, unknown>> | undefined) ?? [];
+      let slides =
+        (slidesResult?.slides as Array<Record<string, unknown>> | undefined) ??
+        [];
 
       if (slides.length === 0 && deckSlides.length > 0) {
         const fallbackTotalSeconds =
@@ -879,7 +924,9 @@ export class RehearsalService {
             start_timestamp: startTs,
             end_timestamp: endTs,
             duration_seconds: Math.max(0, Math.round(endTs - startTs)),
-            duration_display: formatDuration(Math.max(0, Math.round(endTs - startTs))),
+            duration_display: formatDuration(
+              Math.max(0, Math.round(endTs - startTs)),
+            ),
             score: slide.score ?? totalScore,
             content_summary: slide.contentSummary ?? '',
             detailed_feedback:
@@ -892,29 +939,33 @@ export class RehearsalService {
         });
       }
 
-      for (const s of slides) {
-        const slideNum = Number(s.slide_number ?? 0);
-        if (!Number.isInteger(slideNum) || slideNum <= 0) continue;
-        const durationSec = Math.round(Number(s.duration_seconds ?? 0));
-        const startTs = Number(s.start_timestamp ?? 0);
-        const endTs = Number(s.end_timestamp ?? 0);
-        await tx.rehearsalSlideAnalysis.create({
-          data: {
+      const slideAnalysisData = slides
+        .map((s) => {
+          const slideNum = Number(s.slide_number ?? 0);
+          if (!Number.isInteger(slideNum) || slideNum <= 0) return null;
+          const durationSec = Math.round(Number(s.duration_seconds ?? 0));
+          const startTs = Number(s.start_timestamp ?? 0);
+          const endTs = Number(s.end_timestamp ?? 0);
+          return {
             rehearsalId,
             slideId: slideIdMap.get(slideNum) ?? null,
             slideNumber: slideNum,
-            category: String(s.category ?? ''),
+            category: stringValue(s.category),
             startTimestamp: startTs,
             endTimestamp: endTs,
             durationSeconds: durationSec,
-            durationDisplay: String(s.duration_display ?? ''),
+            durationDisplay: stringValue(s.duration_display),
             score: Number(s.score ?? 0),
-            contentSummary: String(s.content_summary ?? ''),
-            detailedFeedback: String(s.detailed_feedback ?? ''),
+            contentSummary: stringValue(s.content_summary),
+            detailedFeedback: stringValue(s.detailed_feedback),
             strengths: JSON.stringify(s.strengths ?? []),
             improvements: JSON.stringify(s.improvements ?? []),
-          },
-        });
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (slideAnalysisData.length > 0) {
+        await tx.rehearsalSlideAnalysis.createMany({ data: slideAnalysisData });
       }
 
       // 5. Pitch 상태 갱신

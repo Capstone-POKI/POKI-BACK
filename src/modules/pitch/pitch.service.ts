@@ -7,10 +7,7 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { CreatePitchDto, NoticeTypeEnum } from './dto/create-pitch.dto';
 import { CreatePitchResponseDto } from './dto/create-pitch.response.dto';
-import {
-  ListPitchesDto,
-  PitchListStatusEnum,
-} from './dto/list-pitches.dto';
+import { ListPitchesDto, PitchListStatusEnum } from './dto/list-pitches.dto';
 import {
   UpdatePitchStatusDto,
   UpdatePitchStatusEnum,

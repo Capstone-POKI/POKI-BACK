@@ -19,6 +19,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpCode, HttpStatus } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -51,6 +52,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('signup')
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.CREATED) // 201
   @ApiOperation({ summary: '이메일 회원가입' })
   @ApiBody({ type: SignupDto })
@@ -91,6 +93,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: '이메일 로그인' })
   @ApiBody({ type: LoginDto })
   @ApiOkResponse({
@@ -163,6 +166,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: '토큰 갱신' })
   @ApiBody({ type: RefreshDto })
   @ApiOkResponse({
@@ -218,6 +222,7 @@ export class AuthController {
   }
 
   @Post(['google', 'login/google'])
+  @Throttle({ auth: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: '구글 로그인' })
   @ApiBody({ type: GoogleLoginDto })
   @ApiUnauthorizedResponse({

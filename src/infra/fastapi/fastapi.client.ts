@@ -207,6 +207,11 @@ export interface AiQaAnswerResult {
   weaknesses: string | null;
 }
 
+interface AiQaAnswerAnalyzeResponse {
+  question_id?: string;
+  answer?: AiQaAnswerResult;
+}
+
 // ── AI Report 타입 ──
 
 export interface AiReportRadarChart {
@@ -257,12 +262,33 @@ export interface AiReportGenerateParams {
 @Injectable()
 export class FastApiClient {
   private readonly logger = new Logger(FastApiClient.name);
-  private readonly baseUrl = process.env.AI_SERVER_URL;
+  private readonly baseUrl: string;
+  private readonly internalApiKey = process.env.AI_INTERNAL_API_KEY;
+
+  constructor() {
+    if (!process.env.AI_SERVER_URL) {
+      throw new Error('AI_SERVER_URL environment variable is required');
+    }
+    this.baseUrl = process.env.AI_SERVER_URL;
+  }
+
+  private getRequestHeaders(extraHeaders: Record<string, string> = {}) {
+    if (!this.internalApiKey) {
+      throw new Error('AI_INTERNAL_API_KEY is required');
+    }
+
+    return {
+      'X-Internal-API-Key': this.internalApiKey,
+      ...extraHeaders,
+    };
+  }
 
   async analyzeDocument(fileUrl: string): Promise<Record<string, unknown>> {
-    const res = await axios.post(`${this.baseUrl}/analyze/document`, {
-      fileUrl,
-    });
+    const res = await axios.post(
+      `${this.baseUrl}/analyze/document`,
+      { fileUrl },
+      { headers: this.getRequestHeaders() },
+    );
     return res.data as Record<string, unknown>;
   }
 
@@ -280,13 +306,15 @@ export class FastApiClient {
     const res = await axios.post(
       `${this.baseUrl}/api/pitches/${pitchId}/notices/analyze`,
       form,
-      { headers: form.getHeaders() },
+      { headers: this.getRequestHeaders(form.getHeaders()) },
     );
     return res.data as AiNoticeUploadResponse;
   }
 
   async getNoticeResult(noticeId: string): Promise<AiNoticeResultResponse> {
-    const res = await axios.get(`${this.baseUrl}/api/notices/${noticeId}`);
+    const res = await axios.get(`${this.baseUrl}/api/notices/${noticeId}`, {
+      headers: this.getRequestHeaders(),
+    });
     return res.data as AiNoticeResultResponse;
   }
 
@@ -297,6 +325,7 @@ export class FastApiClient {
     const res = await axios.patch(
       `${this.baseUrl}/api/notices/${noticeId}`,
       body,
+      { headers: this.getRequestHeaders() },
     );
     return res.data as AiNoticeResultResponse;
   }
@@ -325,18 +354,23 @@ export class FastApiClient {
     const res = await axios.post(
       `${this.baseUrl}/api/pitches/${pitchId}/ir-decks/analyze`,
       form,
-      { headers: form.getHeaders() },
+      { headers: this.getRequestHeaders(form.getHeaders()) },
     );
     return res.data as AiIrUploadResponse;
   }
 
   async getIrDeckResult(aiJobId: string): Promise<AiIrSummaryResponse> {
-    const res = await axios.get(`${this.baseUrl}/api/ir-decks/${aiJobId}`);
+    const res = await axios.get(`${this.baseUrl}/api/ir-decks/${aiJobId}`, {
+      headers: this.getRequestHeaders(),
+    });
     return res.data as AiIrSummaryResponse;
   }
 
   async getIrDeckSlides(aiJobId: string): Promise<AiIrSlidesResponse> {
-    const res = await axios.get(`${this.baseUrl}/api/ir-decks/${aiJobId}/slides`);
+    const res = await axios.get(
+      `${this.baseUrl}/api/ir-decks/${aiJobId}/slides`,
+      { headers: this.getRequestHeaders() },
+    );
     return res.data as AiIrSlidesResponse;
   }
 
@@ -381,14 +415,16 @@ export class FastApiClient {
       form.append('context_json', JSON.stringify(context));
     }
     // options_json에는 scenario만 전달 (slide_timestamps는 Form 필드로 별도 전송)
-    const optionsToSend = options?.scenario ? { scenario: options.scenario } : null;
+    const optionsToSend = options?.scenario
+      ? { scenario: options.scenario }
+      : null;
     if (optionsToSend) {
       form.append('options_json', JSON.stringify(optionsToSend));
     }
     const res = await axios.post(
       `${this.baseUrl}/api/pitches/${pitchId}/voice/analyze`,
       form,
-      { headers: form.getHeaders() },
+      { headers: this.getRequestHeaders(form.getHeaders()) },
     );
     return res.data as {
       voice_id: string;
@@ -400,12 +436,16 @@ export class FastApiClient {
   }
 
   async getVoiceResult(voiceId: string): Promise<Record<string, unknown>> {
-    const res = await axios.get(`${this.baseUrl}/api/voice/${voiceId}`);
+    const res = await axios.get(`${this.baseUrl}/api/voice/${voiceId}`, {
+      headers: this.getRequestHeaders(),
+    });
     return res.data as Record<string, unknown>;
   }
 
   async getVoiceSlides(voiceId: string): Promise<Record<string, unknown>> {
-    const res = await axios.get(`${this.baseUrl}/api/voice/${voiceId}/slides`);
+    const res = await axios.get(`${this.baseUrl}/api/voice/${voiceId}/slides`, {
+      headers: this.getRequestHeaders(),
+    });
     return res.data as Record<string, unknown>;
   }
 
@@ -425,13 +465,16 @@ export class FastApiClient {
     const res = await axios.post(
       `${this.baseUrl}/api/pitches/${pitchId}/qa/questions/generate`,
       form,
-      { headers: form.getHeaders() },
+      { headers: this.getRequestHeaders(form.getHeaders()) },
     );
     return res.data as AiQaGenerateResponse;
   }
 
   async getQaQuestions(pitchId: string): Promise<AiQaQuestionsResponse> {
-    const res = await axios.get(`${this.baseUrl}/api/pitches/${pitchId}/questions`);
+    const res = await axios.get(
+      `${this.baseUrl}/api/pitches/${pitchId}/questions`,
+      { headers: this.getRequestHeaders() },
+    );
     return res.data as AiQaQuestionsResponse;
   }
 
@@ -453,17 +496,24 @@ export class FastApiClient {
     const res = await axios.post(
       `${this.baseUrl}/api/questions/${questionId}/answers/analyze`,
       form,
-      { headers: form.getHeaders() },
+      { headers: this.getRequestHeaders(form.getHeaders()) },
     );
-    return res.data as AiQaAnswerResult;
+    const data = res.data as AiQaAnswerResult | AiQaAnswerAnalyzeResponse;
+    return 'answer' in data && data.answer ? data.answer : (data as AiQaAnswerResult);
   }
 
-  async generateAiReport(params: AiReportGenerateParams): Promise<AiReportResult> {
+  async generateAiReport(
+    params: AiReportGenerateParams,
+  ): Promise<AiReportResult> {
     const { pitchId, ...body } = params;
     const res = await axios.post(
       `${this.baseUrl}/api/pitches/${pitchId}/report/generate`,
       body,
-      { headers: { 'Content-Type': 'application/json' } },
+      {
+        headers: this.getRequestHeaders({
+          'Content-Type': 'application/json',
+        }),
+      },
     );
     return res.data as AiReportResult;
   }

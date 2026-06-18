@@ -39,13 +39,18 @@ export class RehearsalController {
 
   @Post('pitches/:pitchId/voice/upload-and-analyze')
   @HttpCode(HttpStatus.ACCEPTED)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: '음성 업로드 및 분석 시작' })
   @ApiParam({ name: 'pitchId', description: 'Pitch ID' })
   @ApiResponse({ status: 202, description: '음성 분석 시작됨' })
   @ApiResponse({ status: 400, schema: { example: { error: 'INVALID_FILE' } } })
-  @ApiResponse({ status: 404, schema: { example: { error: 'PITCH_NOT_FOUND' } } })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'PITCH_NOT_FOUND' } },
+  })
   uploadAndAnalyze(
     @Param('pitchId') pitchId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -64,7 +69,10 @@ export class RehearsalController {
   @ApiOperation({ summary: '음성 분석 결과 조회' })
   @ApiParam({ name: 'voiceId', description: 'Voice Analysis ID' })
   @ApiResponse({ status: 200, description: 'IN_PROGRESS | COMPLETED | FAILED' })
-  @ApiResponse({ status: 404, schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } } })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } },
+  })
   getResult(
     @Param('voiceId') voiceId: string,
     @Req() req: AuthenticatedRequest,
@@ -76,7 +84,10 @@ export class RehearsalController {
   @ApiOperation({ summary: '음성 분석 슬라이드별 결과 조회' })
   @ApiParam({ name: 'voiceId', description: 'Voice Analysis ID' })
   @ApiResponse({ status: 200, description: 'IN_PROGRESS | COMPLETED' })
-  @ApiResponse({ status: 404, schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } } })
+  @ApiResponse({
+    status: 404,
+    schema: { example: { error: 'VOICE_ANALYSIS_NOT_FOUND' } },
+  })
   getSlides(
     @Param('voiceId') voiceId: string,
     @Req() req: AuthenticatedRequest,

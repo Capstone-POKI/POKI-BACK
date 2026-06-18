@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   Injectable,
   BadRequestException,
@@ -11,8 +12,10 @@ import {
   AiIrSummaryResponse,
   AiIrSlidesResponse,
 } from '../../infra/fastapi/fastapi.client';
+import { assertPdfFile } from '../../common/file-validation';
+import { runSerializableTransaction } from '../../infra/prisma/serializable-transaction';
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const IR_DECK_SYNC_INTERVAL_MS = Number(
   process.env.IR_DECK_SYNC_INTERVAL_MS ?? 5000,
 );
@@ -22,8 +25,9 @@ const IR_DECK_ANALYSIS_TIMEOUT_MS =
 function safeJsonArray(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
   } catch {
     return [];
   }
@@ -74,6 +78,7 @@ type CanonicalIrAxis =
 export class DeckService {
   private readonly logger = new Logger(DeckService.name);
   private readonly activeDeckPollers = new Set<string>();
+  private readonly activeDeckSyncers = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -245,7 +250,9 @@ export class DeckService {
     interpretation: string,
     guide: string,
   ): CanonicalIrAxis {
-    const text = `${criteriaName} ${interpretation} ${guide}`.replace(/\s+/g, '').toLowerCase();
+    const text = `${criteriaName} ${interpretation} ${guide}`
+      .replace(/\s+/g, '')
+      .toLowerCase();
 
     if (
       text.includes('팀') ||
@@ -314,35 +321,13 @@ export class DeckService {
       throw new ForbiddenException({ error: 'FORBIDDEN' });
     }
 
-    if (
-      !file.originalname.toLowerCase().endsWith('.pdf') &&
-      file.mimetype !== 'application/pdf'
-    ) {
-      throw new BadRequestException({
-        error: 'INVALID_FILE',
-        message: 'PDF 파일만 업로드 가능합니다',
-      });
-    }
+    assertPdfFile(file);
     if (file.size > MAX_FILE_SIZE) {
       throw new BadRequestException({
         error: 'FILE_TOO_LARGE',
-        message: '파일 크기는 100MB 이하여야 합니다',
+        message: '파일 크기는 50MB 이하여야 합니다',
       });
     }
-
-    // 기존 latest 내림
-    await this.prisma.iRDeck.updateMany({
-      where: { pitchId, isLatest: true },
-      data: { isLatest: false },
-    });
-
-    // 다음 버전 계산
-    const latest = await this.prisma.iRDeck.findFirst({
-      where: { pitchId },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (latest?.version ?? 0) + 1;
 
     // 최신 Notice 참조
     const latestNotice = await this.prisma.notice.findFirst({
@@ -356,23 +341,36 @@ export class DeckService {
       latestNotice?.id ?? null,
     );
 
-    // Deck row 생성
-    const irDeck = await this.prisma.iRDeck.create({
-      data: {
-        pitchId,
-        noticeId: latestNotice?.id ?? null,
-        pdfSizeBytes: file.size,
-        pdfUploadStatus: 'PROCESSING',
-        analysisStatus: 'IN_PROGRESS',
-        version: nextVersion,
-        isLatest: true,
-      },
-    });
+    const irDeck = await runSerializableTransaction(this.prisma, async (tx) => {
+      await tx.iRDeck.updateMany({
+        where: { pitchId, isLatest: true },
+        data: { isLatest: false },
+      });
 
-    // Pitch 상태 갱신
-    await this.prisma.pitch.update({
-      where: { id: pitchId },
-      data: { status: 'IRDECK_ANALYSIS' },
+      const latest = await tx.iRDeck.findFirst({
+        where: { pitchId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+
+      const createdDeck = await tx.iRDeck.create({
+        data: {
+          pitchId,
+          noticeId: latestNotice?.id ?? null,
+          pdfSizeBytes: file.size,
+          pdfUploadStatus: 'PROCESSING',
+          analysisStatus: 'IN_PROGRESS',
+          version: (latest?.version ?? 0) + 1,
+          isLatest: true,
+        },
+      });
+
+      await tx.pitch.update({
+        where: { id: pitchId },
+        data: { status: 'IRDECK_ANALYSIS' },
+      });
+
+      return createdDeck;
     });
 
     // AI 비동기 호출
@@ -388,7 +386,7 @@ export class DeckService {
       ir_deck_id: irDeck.id,
       pitch_id: pitchId,
       analysis_status: 'IN_PROGRESS' as const,
-      version: nextVersion,
+      version: irDeck.version,
       message: 'IR Deck 분석이 시작되었습니다.',
     };
   }
@@ -459,16 +457,16 @@ export class DeckService {
       criteria_scores: (ds?.criteriaScores ?? []).map((c) => ({
         criteria_name: c.criteriaName,
         pitchcoach_interpretation:
-          c.pitchcoachInterpretation ??
-          `${c.criteriaName} 항목을 평가합니다.`,
-        ir_guide:
-          c.irGuide ?? `${c.criteriaName} 관련 근거를 제시하세요.`,
+          c.pitchcoachInterpretation ?? `${c.criteriaName} 항목을 평가합니다.`,
+        ir_guide: c.irGuide ?? `${c.criteriaName} 관련 근거를 제시하세요.`,
         score: c.score,
         max_score: 100,
         raw_score: undefined,
         raw_max_score: undefined,
         coverage_status: undefined,
-        evidence_slides: safeJsonArray(c.relatedSlides).map((v) => Number(v)).filter((v) => Number.isInteger(v)),
+        evidence_slides: safeJsonArray(c.relatedSlides)
+          .map((v) => Number(v))
+          .filter((v) => Number.isInteger(v)),
         feedback: c.feedback ?? '',
       })),
       presentation_guide: {
@@ -815,8 +813,22 @@ export class DeckService {
     noticeId: string | null;
   }): Promise<boolean> {
     if (!irDeck.pdfUrl?.startsWith('ai://')) return false;
+    if (this.activeDeckSyncers.has(irDeck.id)) return false;
+    this.activeDeckSyncers.add(irDeck.id);
+    try {
+      return await this.doSyncFromAi(irDeck);
+    } finally {
+      this.activeDeckSyncers.delete(irDeck.id);
+    }
+  }
 
-    const aiId = irDeck.pdfUrl.replace('ai://', '');
+  private async doSyncFromAi(irDeck: {
+    id: string;
+    pitchId: string;
+    pdfUrl: string | null;
+    noticeId: string | null;
+  }): Promise<boolean> {
+    const aiId = irDeck.pdfUrl!.replace('ai://', '');
 
     try {
       const summary: AiIrSummaryResponse =
@@ -825,7 +837,14 @@ export class DeckService {
       if (summary.analysis_status === 'COMPLETED') {
         if (!summary.deck_score) {
           this.logger.warn(`IR Deck COMPLETED but deck_score missing: ${aiId}`);
-          return false;
+          await this.prisma.iRDeck.update({
+            where: { id: irDeck.id },
+            data: {
+              analysisStatus: 'FAILED',
+              errorMessage: 'AI 분석 완료 후 점수 데이터가 누락되었습니다.',
+            },
+          });
+          return true;
         }
 
         let slidesRes: AiIrSlidesResponse | null = null;
@@ -836,10 +855,13 @@ export class DeckService {
         }
 
         const ds = summary.deck_score;
-        const pg = summary.presentation_guide ?? { guide: [], time_allocation: [], emphasized_slides: [] };
+        const pg = summary.presentation_guide ?? {
+          guide: [],
+          time_allocation: [],
+          emphasized_slides: [],
+        };
 
         await this.prisma.$transaction(async (tx) => {
-
           // 1. Deck 본체 갱신
           await tx.iRDeck.update({
             where: { id: irDeck.id },
@@ -891,11 +913,10 @@ export class DeckService {
             irGuide: string | null;
           }> = [];
           if (irDeck.noticeId) {
-            const noticeCriteria =
-              await tx.noticeEvaluationCriteria.findMany({
-                where: { noticeId: irDeck.noticeId },
-                orderBy: { displayOrder: 'asc' },
-              });
+            const noticeCriteria = await tx.noticeEvaluationCriteria.findMany({
+              where: { noticeId: irDeck.noticeId },
+              orderBy: { displayOrder: 'asc' },
+            });
             noticeCriteriaRows = noticeCriteria;
             criteriaIdMap = Object.fromEntries(
               noticeCriteria.map((c) => [c.criteriaName, c.id]),
@@ -953,25 +974,31 @@ export class DeckService {
           await tx.slide.deleteMany({ where: { irDeckId: irDeck.id } });
 
           const slides = slidesRes?.slides ?? [];
-          for (const s of slides) {
-            const slide = await tx.slide.create({
-              data: {
+          if (slides.length > 0) {
+            const slidesWithIds = slides.map((s) => ({
+              ...s,
+              id: randomUUID(),
+            }));
+
+            await tx.slide.createMany({
+              data: slidesWithIds.map((s) => ({
+                id: s.id,
                 irDeckId: irDeck.id,
                 slideNumber: s.slide_number,
                 category: s.category,
                 thumbnailUrl: s.thumbnail_url ?? null,
                 contentSummary: s.content_summary,
                 score: s.score,
-              },
+              })),
             });
 
-            await tx.slideFeedback.create({
-              data: {
-                slideId: slide.id,
+            await tx.slideFeedback.createMany({
+              data: slidesWithIds.map((s) => ({
+                slideId: s.id,
                 detailedFeedback: s.detailed_feedback,
                 strengths: JSON.stringify(s.strengths),
                 improvements: JSON.stringify(s.improvements),
-              },
+              })),
             });
           }
 
@@ -992,8 +1019,7 @@ export class DeckService {
             analysisStatus: 'FAILED',
             pdfUploadStatus: 'FAILED',
             errorMessage:
-              summary.error_message ??
-              'IR Deck 분석 중 오류가 발생했습니다.',
+              summary.error_message ?? 'IR Deck 분석 중 오류가 발생했습니다.',
           },
         });
         return true;

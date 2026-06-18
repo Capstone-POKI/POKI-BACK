@@ -154,7 +154,7 @@ model Notice {
   reports            Report[]
 
   @@index([pitchId])
-  @@index([pitchId, version])
+  @@unique([pitchId, version])
   @@index([pitchId, isLatest])
   @@index([analysisStatus])
 }
@@ -242,7 +242,7 @@ model IRDeck {
 
   @@index([pitchId])
   @@index([noticeId])
-  @@index([pitchId, version])
+  @@unique([pitchId, version])
   @@index([pitchId, isLatest])
 }
 

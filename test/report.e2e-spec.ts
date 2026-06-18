@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-const request = require('supertest');
+import request from 'supertest';
 import { ReportController } from '../src/modules/report/report.controller';
 import { ReportService } from '../src/modules/report/report.service';
 import { PrismaService } from '../src/infra/prisma/prisma.service';
@@ -33,7 +33,9 @@ describe('Report create (e2e)', () => {
   } as any as PrismaService;
 
   const mockFastApiClient = {
-    generateAiReport: jest.fn().mockRejectedValue(new Error('AI disabled in tests')),
+    generateAiReport: jest
+      .fn()
+      .mockRejectedValue(new Error('AI disabled in tests')),
   } as unknown as FastApiClient;
 
   const mockGuard = {
